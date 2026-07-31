@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noFallthroughCasesInSwitch": true,
+    "paths": {
+      "@/*": ["./src/*"],
+      "zite-auth-sdk": ["./src/mocks/zite-auth-sdk.ts"],
+      "zite-endpoints-sdk": ["./src/mocks/zite-endpoints-sdk.ts"],
+      "zite-integrations-backend-sdk": ["./src/mocks/zite-integrations-backend-sdk.ts"],
+      "zite-file-upload-sdk": ["./src/mocks/zite-file-upload-sdk.ts"]
+    }
+  },
+  "include": ["src", "server.ts"],
+  "references": [{ "path": "./tsconfig.node.json" }]
+}
