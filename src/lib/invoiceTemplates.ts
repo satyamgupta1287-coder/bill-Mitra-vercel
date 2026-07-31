@@ -70,11 +70,11 @@ export function renderClassicGst(company: any, invoice: any, customer: any, item
   const isIgst = num(invoice.igstAmount) > 0;
   const itemRows = items.map((item, i) => {
     const qtyStr = item.freeQuantity && num(item.freeQuantity) > 0 ? `${num(item.quantity)}+${num(item.freeQuantity)}` : `${num(item.quantity)}`;
-    return `<tr>
+    return `<tr class="item-row">
       <td style="text-align:center">${i+1}</td><td>${esc(item.itemName)}</td><td class="mono">${esc(item.hsnSacCode)}</td>
       <td>${esc(item.manufacturer)}</td><td style="text-align:center">${esc(item.packSize)}</td><td style="text-align:center">${qtyStr}</td>
       <td>${esc(item.batchNumber)}</td><td style="text-align:center">${esc(item.expiryDate)}</td><td style="text-align:right">${fmt(num(item.mrp))}</td>
-      <td style="text-align:right">${fmt(num(item.unitPrice))}</td><td style="text-align:center">${num(item.discountPercent) > 0 ? num(item.discountPercent).toFixed(2) : '-'}</td>
+      ${config.title === 'Retail Sale' ? '' : `<td style="text-align:right">${fmt(num(item.unitPrice))}</td>`}<td style="text-align:center">${num(item.discountPercent) > 0 ? num(item.discountPercent).toFixed(2) : '-'}</td>
       <td style="text-align:right;font-weight:600">${fmt(num(item.total))}</td><td style="text-align:center">${num(item.gstPercentage)}%</td><td style="text-align:right">${fmt(num(item.taxableAmount))}</td>
     </tr>`;
   }).join('');
@@ -240,7 +240,7 @@ function generatePharmaHtml(company: any, invoice: any, customer: any, items: an
 @page { size: a4; margin: 8mm; }
 body { font-family: -apple-system, sans-serif; color: #111; font-size: 8.5pt; line-height: 1.3; }
 * { box-sizing: border-box; }
-.wrap { border: 1px solid #000; padding: 0; display: flex; flex-direction: column; min-height: 98vh; }
+.wrap { border: 1px solid #000; padding: 0; display: flex; flex-direction: column; height: auto; }
 .hdr { display: flex; border-bottom: 1px solid #000; }
 .hdr-l { width: 120px; border-right: 1px solid #000; display: flex; align-items: center; justify-content: center; padding: 5px; }
 .hdr-c { flex: 1; text-align: center; padding: 10px; }
@@ -252,10 +252,11 @@ body { font-family: -apple-system, sans-serif; color: #111; font-size: 8.5pt; li
 .col-box:last-child { border-right: none; }
 table { width: 100%; border-collapse: collapse; }
 th { background: #f0f0f0; font-size: 7pt; font-weight: 700; padding: 5px 4px; border: 1px solid #000; text-transform: uppercase; text-align: center; }
-td { padding: 4px 4px; border: 1px solid #000; font-size: 8pt; border-bottom: none; border-top: none; }
-.items-table-container { flex: 1; border-bottom: 1px solid #000; border-top: 1px solid #000; }
+td { padding: 4px 4px; border: 1px solid #000; font-size: 8pt; }
+.items-table-container { border-bottom: 1px solid #000; border-top: 1px solid #000; }
 .items-table { border: none; height: 100%; }
-.items-table td { border: 1px solid #000; border-top: none; border-bottom: none; }
+.items-table td { border: 1px solid #000; vertical-align: top; }
+
 .bottom-section { display: flex; border-bottom: 1px solid #000; }
 .bot-left { width: 65%; border-right: 1px solid #000; display:flex; flex-direction:column; }
 .bot-right { width: 35%; display:flex; flex-direction:column; }
@@ -329,7 +330,7 @@ td { padding: 4px 4px; border: 1px solid #000; font-size: 8pt; border-bottom: no
           <th>BATCH</th>
           <th>EXP</th>
           <th style="text-align:right">MRP</th>
-          <th style="text-align:right">RATE</th>
+          ${config.title === 'Retail Sale' ? '' : '<th style="text-align:right">RATE</th>'}
           <th>DISC%</th>
           <th style="text-align:right">AMOUNT</th>
           <th>GST%</th>
@@ -337,8 +338,9 @@ td { padding: 4px 4px; border: 1px solid #000; font-size: 8pt; border-bottom: no
         </tr>
       </thead>
       <tbody>
+          
         ${itemRows}
-      </tbody>
+        </tbody>
     </table>
   </div>
 

@@ -159,6 +159,7 @@ export default function CreateInvoicePage() {
   const customerRef = useRef<HTMLDivElement>(null);
   const [activeProductRow, setActiveProductRow] = useState<number | null>(null);
   const [productSearch, setProductSearch] = useState('');
+  const [selectedDropdownIndex, setSelectedDropdownIndex] = useState(0);
   const justSelectedRef = useRef(false);
 
   const isRetail = type === 'Retail Sale';
@@ -267,7 +268,7 @@ export default function CreateInvoicePage() {
         purchaseId: s.isProduct ? undefined : s.id,
         hsnSacCode: s.hsnSacCode || '',
         mrp: s.mrp || 0,
-        unitPrice: s.unitPrice || (s as any).purchaseRate || 0,
+        unitPrice: isRetail ? (s.mrp || 0) : (s.unitPrice || (s as any).purchaseRate || 0),
         gstPercentage: s.gstPercentage || 12,
         batchNumber: s.batchNumber || '',
         expiryDate: s.expiryDate || '',
@@ -421,7 +422,7 @@ export default function CreateInvoicePage() {
               {cols.free && <th className="text-right px-1.5 py-1.5 w-10">Free</th>}
               {cols.batch && <th className="text-left px-1.5 py-1.5 w-20">{cols.batchLabel}</th>}
               {cols.expiry && <th className="text-left px-1.5 py-1.5 w-16">{cols.expiryLabel}</th>}
-              <th className="text-right px-1.5 py-1.5 w-16">Rate</th>
+              {!isRetail && <th className="text-right px-1.5 py-1.5 w-16">Rate</th>}
               {cols.disc && <th className="text-right px-1.5 py-1.5 w-14">{category === 'electronics' ? 'Disc(₹)' : 'D%'}</th>}
               {cols.gst && <th className="text-right px-1.5 py-1.5 w-10">GST%</th>}
               <th className="text-right px-1.5 py-1.5 w-20">Amount</th>
@@ -446,7 +447,7 @@ export default function CreateInvoicePage() {
                       className="h-6 text-[11px] font-semibold border-0 bg-transparent px-1 focus-visible:ring-1 focus-visible:ring-primary"
                       value={isActive ? productSearch : item.itemName}
                       placeholder="Type product..."
-                      onChange={e => { setProductSearch(e.target.value); if (!isActive) setActiveProductRow(i); }}
+                      onChange={e => { setProductSearch(e.target.value); setSelectedDropdownIndex(0); if (!isActive) setActiveProductRow(i); }}
                       onFocus={() => {
                         if (justSelectedRef.current) { justSelectedRef.current = false; return; }
                         setActiveProductRow(i);
@@ -466,9 +467,20 @@ export default function CreateInvoicePage() {
                       onKeyDown={e => {
                         if (e.key === 'Enter') {
                           e.preventDefault();
-                          if (isActive && filteredPick.length > 0) selectPickItem(i, filteredPick[0]);
+                          if (isActive && filteredPick.length > 0) selectPickItem(i, filteredPick[selectedDropdownIndex] || filteredPick[0]);
                           else if (item.itemName) goToNextRow(i);
-                        } else if (e.key === 'Escape') setActiveProductRow(null);
+                        } else if (e.key === 'Escape') {
+                          setActiveProductRow(null);
+                        } else if (e.key === 'ArrowDown') {
+                          e.preventDefault();
+                          setSelectedDropdownIndex(prev => Math.min(prev + 1, filteredPick.slice(0, 50).length - 1));
+                          // Scroll into view hack
+                          setTimeout(() => { document.getElementById('dropdown-item-' + (selectedDropdownIndex + 1))?.scrollIntoView({ block: 'nearest' }); }, 0);
+                        } else if (e.key === 'ArrowUp') {
+                          e.preventDefault();
+                          setSelectedDropdownIndex(prev => Math.max(prev - 1, 0));
+                          setTimeout(() => { document.getElementById('dropdown-item-' + Math.max(selectedDropdownIndex - 1, 0))?.scrollIntoView({ block: 'nearest' }); }, 0);
+                        }
                       }}
                     />
                     {isActive && filteredPick.length > 0 && (
@@ -476,6 +488,7 @@ export default function CreateInvoicePage() {
                         filteredPick={filteredPick}
                         onSelect={(s) => selectPickItem(i, s)}
                         category={category}
+                        selectedIndex={selectedDropdownIndex}
                       />
                     )}
                   </td>
@@ -483,12 +496,16 @@ export default function CreateInvoicePage() {
                   {cols.pack && <CellInput row={i} field="pack" value={item.packSize} onChange={v => updateItem(i, 'packSize', v)} onEnter={() => goToNextRow(i)} />}
                   {cols.manufacturer && <CellInput row={i} field="mfr" value={item.manufacturer} onChange={v => updateItem(i, 'manufacturer', v)} onEnter={() => goToNextRow(i)} />}
                   {cols.unit && <CellInput row={i} field="unit" value={item.unit} onChange={v => updateItem(i, 'unit', v)} onEnter={() => goToNextRow(i)} />}
-                  {cols.mrp && <CellInput row={i} field="mrp" value={item.mrp || ''} onChange={v => updateItem(i, 'mrp', Number(v))} type="number" align="right" mono onEnter={() => goToNextRow(i)} />}
+                  {cols.mrp && <CellInput row={i} field="mrp" value={item.mrp || ''} onChange={v => {
+                    const n = Number(v);
+                    updateItem(i, 'mrp', n);
+                    if (isRetail) updateItem(i, 'unitPrice', n);
+                  }} type="number" align="right" mono onEnter={() => goToNextRow(i)} />}
                   <CellInput row={i} field="qty" value={item.quantity || ''} onChange={v => updateItem(i, 'quantity', Number(v))} type="number" align="right" bold onEnter={() => goToNextRow(i)} />
                   {cols.free && <CellInput row={i} field="free" value={item.freeQuantity || ''} onChange={v => updateItem(i, 'freeQuantity', Number(v))} type="number" align="right" onEnter={() => goToNextRow(i)} />}
                   {cols.batch && <CellInput row={i} field="batch" value={item.batchNumber} onChange={v => updateItem(i, 'batchNumber', v)} mono onEnter={() => goToNextRow(i)} />}
                   {cols.expiry && <CellInput row={i} field="expiry" value={item.expiryDate} onChange={v => updateItem(i, 'expiryDate', v)} placeholder="MM/YY" onEnter={() => goToNextRow(i)} />}
-                  <CellInput row={i} field="rate" value={item.unitPrice || ''} onChange={v => updateItem(i, 'unitPrice', Number(v))} type="number" align="right" mono onEnter={() => goToNextRow(i)} />
+                  {!isRetail && <CellInput row={i} field="rate" value={item.unitPrice || ''} onChange={v => updateItem(i, 'unitPrice', Number(v))} type="number" align="right" mono onEnter={() => goToNextRow(i)} />}
                   {cols.disc && (
                     category === 'electronics'
                       ? <CellInput row={i} field="discAmt" value={item.discountAmount || ''} onChange={v => updateItem(i, 'discountAmount', Number(v))} type="number" align="right" onEnter={() => goToNextRow(i)} />
@@ -531,7 +548,7 @@ export default function CreateInvoicePage() {
 }
 
 // ─── Product Dropdown ───
-function ProductDropdown({ filteredPick, onSelect, category }: { filteredPick: StockItem[]; onSelect: (s: StockItem) => void; category: TemplateCategory }) {
+function ProductDropdown({ filteredPick, onSelect, category, selectedIndex = 0 }: { filteredPick: StockItem[]; onSelect: (s: StockItem) => void; category: TemplateCategory; selectedIndex?: number }) {
   const showBatch = category === 'pharma' || category === 'electronics';
   return (
     <div className="fixed md:absolute z-50 md:top-full left-0 right-0 md:right-auto bottom-0 md:bottom-auto md:left-0 md:w-[550px] md:mt-0.5 bg-card border border-border rounded-t-xl md:rounded shadow-xl max-h-[40vh] md:max-h-52 overflow-y-auto">
@@ -549,7 +566,8 @@ function ProductDropdown({ filteredPick, onSelect, category }: { filteredPick: S
         <tbody>
           {filteredPick.slice(0, 50).map((s, idx) => (
             <tr key={`${s.id}-${s.batchNumber || 'p'}`}
-              className={`cursor-pointer hover:bg-primary/10 ${idx === 0 ? 'bg-primary/5 ring-1 ring-inset ring-primary/30' : idx % 2 === 0 ? 'bg-accent/30' : ''}`}
+              id={`dropdown-item-${idx}`}
+              className={`cursor-pointer hover:bg-primary/10 ${idx === selectedIndex ? 'bg-primary/20 ring-1 ring-inset ring-primary/50' : idx % 2 === 0 ? 'bg-accent/30' : ''}`}
               onMouseDown={e => { e.preventDefault(); onSelect(s); }}>
               <td className="px-1.5 py-0.5 font-semibold">{s.productName}</td>
               <td className="px-1.5 py-0.5 text-muted-foreground">{s.packSize || '-'}</td>

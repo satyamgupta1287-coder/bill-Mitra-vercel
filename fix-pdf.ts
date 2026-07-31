@@ -1,34 +1,43 @@
 import fs from 'fs';
-let content = fs.readFileSync('src/pages/InvoiceDetailPage.tsx', 'utf8');
 
-const newHandlePdf = `
-  const handlePdf = async () => {
-    if (!id) return;
-    setGenerating(true);
-    try {
-      const { url, html } = await generateInvoicePdf({ invoiceId: id }) as any;
-      if (html) {
-        const printWindow = window.open('', '_blank');
-        if (printWindow) {
-          printWindow.document.write(html);
-          printWindow.document.close();
-          // Give it a moment to load styles/images
-          setTimeout(() => {
-            printWindow.focus();
-            printWindow.print();
-          }, 500);
-        } else {
-          toast.error("Popup blocked. Please allow popups to print.");
-        }
-      } else if (url) {
-        window.open(url, '_blank');
-      }
-    } catch { toast.error('Failed to generate PDF'); }
-    finally { setGenerating(false); }
-  };
-`;
+let content = fs.readFileSync('src/lib/invoiceTemplates.ts', 'utf8');
 
-content = content.replace(/const handlePdf = async \(\) => \{[\s\S]*?\};/, newHandlePdf.trim());
-content = content.replace("<Download className=\"w-4 h-4 mr-2\" />{generating ? 'Generating...' : 'Download PDF'}", "<FileText className=\"w-4 h-4 mr-2\" />{generating ? 'Generating...' : 'Print / Save PDF'}");
+// 1. Fix CSS styles
+content = content.replace(
+  ".wrap { border: 1px solid #000; padding: 0; display: flex; flex-direction: column; min-height: 250mm; }",
+  ".wrap { border: 1px solid #000; padding: 0; display: flex; flex-direction: column; height: auto; }"
+);
 
-fs.writeFileSync('src/pages/InvoiceDetailPage.tsx', content);
+content = content.replace(
+  "td { padding: 4px 4px; border: 1px solid #000; font-size: 8pt; border-bottom: none; border-top: none; }",
+  "td { padding: 4px 4px; border: 1px solid #000; font-size: 8pt; }"
+);
+
+content = content.replace(
+  ".items-table-container { flex: 1; border-bottom: 1px solid #000; border-top: 1px solid #000; }",
+  ".items-table-container { border-bottom: 1px solid #000; border-top: 1px solid #000; }"
+);
+
+content = content.replace(
+  ".items-table td { border: 1px solid #000; border-top: none; border-bottom: none; vertical-align: top; }",
+  ".items-table td { border: 1px solid #000; vertical-align: top; }"
+);
+
+content = content.replace(
+  ".item-row td { border-bottom: 1px solid #000 !important; }",
+  "" // remove
+);
+
+// 2. Remove filler row
+const tbodyStart = "<tbody>";
+const fillerRowIndex = content.indexOf('<tr class="filler-row">');
+const tbodyEndIndex = content.indexOf('</tbody>', fillerRowIndex);
+
+if (fillerRowIndex !== -1 && tbodyEndIndex !== -1) {
+  const beforeFiller = content.substring(0, fillerRowIndex);
+  const afterFiller = content.substring(tbodyEndIndex);
+  content = beforeFiller + afterFiller;
+}
+
+fs.writeFileSync('src/lib/invoiceTemplates.ts', content);
+console.log('Fixed PDF template layout');
