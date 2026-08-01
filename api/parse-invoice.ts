@@ -51,7 +51,7 @@ Extract the following details from this invoice/bill image and return them as a 
 Only return the JSON. No other text.`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.6-flash',
       contents: [
         {
           role: 'user',
