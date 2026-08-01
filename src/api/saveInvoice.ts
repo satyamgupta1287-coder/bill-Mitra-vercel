@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { createEndpoint, Invoices, InvoiceItems, Companies, Purchases, Customers, ZiteError } from 'zite-integrations-backend-sdk';
+import { createEndpoint, Invoices, InvoiceItems, Companies, Purchases, Products, Customers, ZiteError } from 'zite-integrations-backend-sdk';
 
 const itemSchema = z.object({
   itemName: z.string(),
@@ -25,6 +25,7 @@ export default createEndpoint({
   inputSchema: z.object({
     invoiceId: z.string().optional(),
     type: z.string(),
+    selectedTemplate: z.string().optional(),
     status: z.string(),
     invoiceDate: z.string(),
     dueDate: z.string().optional(),
@@ -164,6 +165,7 @@ export default createEndpoint({
 
     const invoiceRecord: any = {
       type: input.type,
+      selectedTemplate: input.selectedTemplate,
       status: input.status,
       invoiceDate: input.invoiceDate,
       dueDate: input.dueDate,
@@ -223,6 +225,13 @@ export default createEndpoint({
               const newStock = Math.max(0, (purchase.currentStock || 0) - item.quantity - (item.freeQuantity || 0));
               const status = newStock === 0 ? 'Out of Stock' : newStock < 10 ? 'Low Stock' : 'Active';
               await Purchases.update({ id: item.purchaseId, record: { currentStock: newStock, status } });
+            }
+          }
+          if (item.product) {
+            const prod = await Products.findOne({ id: item.product });
+            if (prod) {
+              const newProdStock = Math.max(0, (prod.stockQuantity || 0) - item.quantity - (item.freeQuantity || 0));
+              await Products.update({ id: item.product, record: { stockQuantity: newProdStock } });
             }
           }
         }

@@ -162,6 +162,20 @@ export default function CreateInvoicePage() {
   const [selectedDropdownIndex, setSelectedDropdownIndex] = useState(0);
   const justSelectedRef = useRef(false);
 
+  const [batchModalState, setBatchModalState] = useState<{
+    open: boolean;
+    rowIndex: number;
+    productName: string;
+    batches: StockItem[];
+    selectedIndex: number;
+  }>({
+    open: false,
+    rowIndex: 0,
+    productName: '',
+    batches: [],
+    selectedIndex: 0,
+  });
+
   const isRetail = type === 'Retail Sale';
   const category = getTemplateCategory(selectedTemplate);
   const cols = getColumnConfig(category);
@@ -177,7 +191,17 @@ export default function CreateInvoicePage() {
     ]).then(([custRes, stockRes, compRes, settingsRes, invoiceRes]) => {
       if (invoiceRes && invoiceRes.invoice) {
         const { invoice, items: invItems } = invoiceRes;
-        setType(invoice.type || 'Tax Invoice');
+        const invType = invoice.type || 'Tax Invoice';
+        setType(invType);
+        if (invoice.selectedTemplate) {
+          setSelectedTemplate(invoice.selectedTemplate);
+        } else if (invType === 'Wholesale') {
+          setSelectedTemplate('Wholesale Invoice');
+        } else if (invType === 'Challan') {
+          setSelectedTemplate('Delivery Challan');
+        } else if (invType === 'Retail Sale') {
+          setSelectedTemplate('Retail Invoice');
+        }
         setStatus(invoice.status || 'Pending');
         setInvoiceDate(invoice.invoiceDate || new Date().toISOString().split('T')[0]);
         setCustomerId(Array.isArray(invoice.customer) ? invoice.customer[0] : (invoice.customer?.id || invoice.customer || ''));
@@ -204,13 +228,15 @@ export default function CreateInvoicePage() {
       const stockIds = new Set<string>();
       const merged: StockItem[] = [];
       (stockRes.stock || []).forEach((s: any) => {
-        merged.push({ ...s, isProduct: false });
-        const pid = Array.isArray(s.product) ? s.product[0] : s.product;
-        if (pid) stockIds.add(pid);
+        if ((s.currentStock ?? 0) > 0) {
+          merged.push({ ...s, isProduct: false });
+          const pid = Array.isArray(s.product) ? s.product[0] : s.product;
+          if (pid) stockIds.add(pid);
+        }
       });
       (stockRes.products || []).forEach((p: any) => {
-        if (!stockIds.has(p.id)) {
-          merged.push({ id: p.id, productName: p.productName, manufacturer: p.manufacturer, packSize: p.packSize, hsnSacCode: p.hsnSacCode, gstPercentage: p.gstPercentage, unitPrice: p.unitPrice, mrp: p.mrp, composition: p.composition, rackLocation: p.rackLocation, scheduleDrug: p.scheduleDrug, isProduct: true });
+        if (!stockIds.has(p.id) && (p.stockQuantity === undefined || p.stockQuantity > 0)) {
+          merged.push({ id: p.id, productName: p.productName, manufacturer: p.manufacturer, packSize: p.packSize, hsnSacCode: p.hsnSacCode, gstPercentage: p.gstPercentage, unitPrice: p.unitPrice, mrp: p.mrp, composition: p.composition, rackLocation: p.rackLocation, scheduleDrug: p.scheduleDrug, isProduct: true, currentStock: p.stockQuantity });
         }
       });
       setAllPickItems(merged);
@@ -232,12 +258,68 @@ export default function CreateInvoicePage() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+N or Cmd+N -> Add new product row
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        e.stopPropagation();
+        setItems(prev => {
+          const nextRowIndex = prev.length;
+          focusField(nextRowIndex, 'product');
+          return [...prev, emptyItem()];
+        });
+        toast.info('New product row added (Ctrl+N)');
+      }
+      // Ctrl+T or Cmd+T -> Delete focused item
+      else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 't') {
+        e.preventDefault();
+        e.stopPropagation();
+        const activeEl = document.activeElement as HTMLElement | null;
+        let targetRowIndex = -1;
+        if (activeEl && activeEl.getAttribute('data-row') !== null) {
+          targetRowIndex = parseInt(activeEl.getAttribute('data-row') || '-1', 10);
+        }
+        setItems(prev => {
+          if (prev.length <= 1) {
+            toast.warning('At least one row is required');
+            return prev;
+          }
+          const delIdx = (targetRowIndex >= 0 && targetRowIndex < prev.length) ? targetRowIndex : prev.length - 1;
+          const updated = prev.filter((_, idx) => idx !== delIdx);
+          const nextFocus = Math.max(0, delIdx - 1);
+          focusField(nextFocus, 'product');
+          toast.info(`Product row ${delIdx + 1} deleted (Ctrl+T)`);
+          return updated;
+        });
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, []);
+
   const selectedCustomer = customers.find(c => c.id === customerId);
   const isInterstate = company?.stateCode && placeOfSupplyCode && company.stateCode !== placeOfSupplyCode;
 
-  const filteredCustomers = customers.filter(c =>
-    !customerSearch || c.customerName?.toLowerCase().includes(customerSearch.toLowerCase()) || c.gstin?.toLowerCase().includes(customerSearch.toLowerCase())
-  );
+  const isRetailCust = (c: any) => c.customerType === 'Retailer' || c.customerType === 'Retail';
+
+  const filteredCustomers = customers.filter(c => {
+    const matchesSearch = !customerSearch ||
+      c.customerName?.toLowerCase().includes(customerSearch.toLowerCase()) ||
+      c.gstin?.toLowerCase().includes(customerSearch.toLowerCase()) ||
+      c.phone?.toLowerCase().includes(customerSearch.toLowerCase());
+
+    if (isRetail) {
+      const hasRetailers = customers.some(x => isRetailCust(x));
+      if (hasRetailers) {
+        return matchesSearch && isRetailCust(c);
+      }
+      return matchesSearch;
+    } else {
+      return matchesSearch && !isRetailCust(c);
+    }
+  });
 
   const filteredPick = allPickItems.filter(s =>
     !productSearch || s.productName?.toLowerCase().includes(productSearch.toLowerCase()) || s.manufacturer?.toLowerCase().includes(productSearch.toLowerCase()) || s.batchNumber?.toLowerCase().includes(productSearch.toLowerCase()) || s.composition?.toLowerCase().includes(productSearch.toLowerCase()) || s.rackLocation?.toLowerCase().includes(productSearch.toLowerCase())
@@ -257,8 +339,10 @@ export default function CreateInvoicePage() {
     setItems(prev => { const n = [...prev]; (n[i] as any)[field] = value; return n; });
   }, []);
 
-  const selectPickItem = (rowIndex: number, s: StockItem) => {
+  const applySelectedItem = (rowIndex: number, s: StockItem) => {
     justSelectedRef.current = true;
+    const mrpVal = s.mrp || 0;
+    const saleRate = s.unitPrice || (s as any).purchaseRate || 0;
     setItems(prev => {
       const n = [...prev];
       n[rowIndex] = {
@@ -267,8 +351,8 @@ export default function CreateInvoicePage() {
         productId: s.isProduct ? s.id : (Array.isArray((s as any).product) ? (s as any).product[0] : (s as any).product),
         purchaseId: s.isProduct ? undefined : s.id,
         hsnSacCode: s.hsnSacCode || '',
-        mrp: s.mrp || 0,
-        unitPrice: isRetail ? (s.mrp || 0) : (s.unitPrice || (s as any).purchaseRate || 0),
+        mrp: mrpVal,
+        unitPrice: isRetail ? (mrpVal || saleRate) : (saleRate || mrpVal),
         gstPercentage: s.gstPercentage || 12,
         batchNumber: s.batchNumber || '',
         expiryDate: s.expiryDate || '',
@@ -281,6 +365,40 @@ export default function CreateInvoicePage() {
     setActiveProductRow(null);
     setProductSearch('');
     focusField(rowIndex, 'qty');
+  };
+
+  const selectPickItem = (rowIndex: number, s: StockItem) => {
+    const targetPid = s.isProduct ? s.id : (Array.isArray((s as any).product) ? (s as any).product[0] : (s as any).product);
+    const targetName = (s.productName || '').trim().toLowerCase();
+
+    // Find all active batches (currentStock > 0)
+    const matchingBatches = allPickItems.filter((item: any) => {
+      if (item.isProduct) return false;
+      if ((item.currentStock ?? 0) <= 0) return false;
+      const itemPid = Array.isArray(item.product) ? item.product[0] : item.product;
+      const itemName = (item.productName || '').trim().toLowerCase();
+
+      if (targetPid && itemPid) {
+        return itemPid === targetPid;
+      }
+      return targetName && itemName === targetName;
+    });
+
+    if (matchingBatches.length > 1) {
+      setBatchModalState({
+        open: true,
+        rowIndex,
+        productName: s.productName,
+        batches: matchingBatches,
+        selectedIndex: 0,
+      });
+      setActiveProductRow(null);
+      setProductSearch('');
+    } else if (matchingBatches.length === 1) {
+      applySelectedItem(rowIndex, matchingBatches[0]);
+    } else {
+      applySelectedItem(rowIndex, s);
+    }
   };
 
   const goToNextRow = useCallback((currentRow: number) => {
@@ -332,7 +450,7 @@ export default function CreateInvoicePage() {
     try {
       const result = await saveInvoice({
         invoiceId: id || undefined,
-        type, status, invoiceDate,
+        type, selectedTemplate, status, invoiceDate,
         customerId: customerId || undefined,
         manualCustomerName: !customerId ? manualName : undefined,
         manualCustomerAddress: !customerId ? manualAddress : undefined,
@@ -374,15 +492,70 @@ export default function CreateInvoicePage() {
           </Button>
           <span className="font-bold text-sm">Sale Bill Entry</span>
           <div className="ml-auto flex items-center gap-2">
-            <span className="text-[10px] opacity-70 hidden md:inline">{TEMPLATE_CATEGORY_LABELS[category]}</span>
+            <span className="text-[10px] opacity-70 hidden lg:inline">Template:</span>
+            <select
+              value={selectedTemplate}
+              onChange={e => setSelectedTemplate(e.target.value)}
+              className="h-6 text-[10px] bg-primary-foreground/10 border border-primary-foreground/20 rounded px-1.5 text-primary-foreground focus:outline-none focus:ring-1 focus:ring-primary-foreground"
+            >
+              <optgroup label="Medical / Pharma">
+                <option value="Classic GST" className="text-foreground bg-background">Classic GST</option>
+                <option value="Modern GST" className="text-foreground bg-background">Modern GST</option>
+                <option value="Retail Invoice" className="text-foreground bg-background">Retail Invoice</option>
+                <option value="Wholesale Invoice" className="text-foreground bg-background">Wholesale Invoice</option>
+                <option value="Delivery Challan" className="text-foreground bg-background">Delivery Challan</option>
+                <option value="Tax Invoice Premium" className="text-foreground bg-background">Tax Invoice Premium</option>
+              </optgroup>
+              <optgroup label="General">
+                <option value="General GST" className="text-foreground bg-background">General GST</option>
+                <option value="Indian Retail Bill" className="text-foreground bg-background">Indian Retail Bill</option>
+                <option value="Proforma Invoice" className="text-foreground bg-background">Proforma Invoice</option>
+                <option value="Thermal Receipt" className="text-foreground bg-background">Thermal Receipt</option>
+              </optgroup>
+              <optgroup label="Industry Specific">
+                <option value="Electronics / Mobile" className="text-foreground bg-background">Electronics / Mobile</option>
+                <option value="Restaurant / Food" className="text-foreground bg-background">Restaurant / Food</option>
+                <option value="Grocery / Kirana" className="text-foreground bg-background">Grocery / Kirana</option>
+                <option value="Furniture / Hardware" className="text-foreground bg-background">Furniture / Hardware</option>
+                <option value="Services Invoice" className="text-foreground bg-background">Services Invoice</option>
+              </optgroup>
+            </select>
             <Input type="date" className="h-6 text-[10px] w-28 bg-primary-foreground/10 border-primary-foreground/20 text-primary-foreground" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} />
           </div>
         </div>
-        <div className="flex overflow-x-auto px-3 pb-1.5 gap-1.5 no-scrollbar">
-          {['Tax Invoice', 'Retail Sale', 'Wholesale', 'Challan'].map(t => (
-            <button key={t} onClick={() => { setType(t); if (t === 'Retail Sale') setCustomerId(''); }}
-              className={`px-3 py-1 rounded text-[11px] font-semibold transition-colors whitespace-nowrap shrink-0 ${type === t ? 'bg-primary-foreground text-primary' : 'hover:bg-primary-foreground/20'}`}>
-              {t}
+        <div className="flex overflow-x-auto px-3 pb-1.5 gap-1.5 no-scrollbar items-center">
+          <span className="text-[10px] opacity-75 mr-1">Bill Type:</span>
+          {[
+            { name: 'Tax Invoice', tmpl: 'Classic GST' },
+            { name: 'Retail Sale', tmpl: 'Retail Invoice' },
+            { name: 'Wholesale', tmpl: 'Wholesale Invoice' },
+            { name: 'Challan', tmpl: 'Delivery Challan' },
+          ].map(t => (
+            <button key={t.name} onClick={() => {
+              const newType = t.name;
+              setType(newType);
+              setSelectedTemplate(t.tmpl);
+              if (newType === 'Retail Sale') {
+                setCustomerId('');
+                setItems(prev => prev.map(item => {
+                  if (!item.itemName) return item;
+                  return { ...item, unitPrice: item.mrp || item.unitPrice };
+                }));
+              } else {
+                setItems(prev => prev.map(item => {
+                  if (!item.itemName) return item;
+                  if (item.productId) {
+                    const match = allPickItems.find((s: any) => (s.isProduct ? s.id : (Array.isArray(s.product) ? s.product[0] : s.product)) === item.productId);
+                    if (match && (match.unitPrice || (match as any).purchaseRate)) {
+                      return { ...item, unitPrice: match.unitPrice || (match as any).purchaseRate };
+                    }
+                  }
+                  return item;
+                }));
+              }
+            }}
+              className={`px-3 py-1 rounded text-[11px] font-semibold transition-colors whitespace-nowrap shrink-0 ${type === t.name ? 'bg-primary-foreground text-primary shadow-sm' : 'hover:bg-primary-foreground/20'}`}>
+              {t.name}
             </button>
           ))}
         </div>
@@ -422,7 +595,7 @@ export default function CreateInvoicePage() {
               {cols.free && <th className="text-right px-1.5 py-1.5 w-10">Free</th>}
               {cols.batch && <th className="text-left px-1.5 py-1.5 w-20">{cols.batchLabel}</th>}
               {cols.expiry && <th className="text-left px-1.5 py-1.5 w-16">{cols.expiryLabel}</th>}
-              {!isRetail && <th className="text-right px-1.5 py-1.5 w-16">Rate</th>}
+              <th className="text-right px-1.5 py-1.5 w-16" title="Sale Rate used for item total calculation">Sale Rate</th>
               {cols.disc && <th className="text-right px-1.5 py-1.5 w-14">{category === 'electronics' ? 'Disc(₹)' : 'D%'}</th>}
               {cols.gst && <th className="text-right px-1.5 py-1.5 w-10">GST%</th>}
               <th className="text-right px-1.5 py-1.5 w-20">Amount</th>
@@ -464,7 +637,7 @@ export default function CreateInvoicePage() {
                           });
                         }, 200);
                       }}
-onKeyDown={e => {
+                      onKeyDown={e => {
                         if (e.key === 'Enter') {
                           e.preventDefault();
                           if (isActive && filteredPick.length > 0) selectPickItem(i, filteredPick[selectedDropdownIndex] || filteredPick[0]);
@@ -480,19 +653,43 @@ onKeyDown={e => {
                         } else if (e.key === 'Escape') {
                           setActiveProductRow(null);
                         } else if (e.key === 'ArrowDown') {
-                          e.preventDefault();
-                          setSelectedDropdownIndex(prev => {
-                            const next = Math.min(prev + 1, filteredPick.slice(0, 50).length - 1);
-                            document.getElementById(`dropdown-item-${next}`)?.scrollIntoView({ block: 'nearest' });
-                            return next;
-                          });
+                          if (isActive && filteredPick.length > 0) {
+                            e.preventDefault();
+                            setSelectedDropdownIndex(prev => {
+                              const next = Math.min(prev + 1, filteredPick.slice(0, 50).length - 1);
+                              document.getElementById(`dropdown-item-${next}`)?.scrollIntoView({ block: 'nearest' });
+                              return next;
+                            });
+                          } else {
+                            e.preventDefault();
+                            const nextInput = document.querySelector(`input[data-row="${i + 1}"][data-field="product"]`) as HTMLInputElement | null;
+                            if (nextInput) { nextInput.focus(); nextInput.select(); nextInput.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+                          }
                         } else if (e.key === 'ArrowUp') {
-                          e.preventDefault();
-                          setSelectedDropdownIndex(prev => {
-                            const next = Math.max(prev - 1, 0);
-                            document.getElementById(`dropdown-item-${next}`)?.scrollIntoView({ block: 'nearest' });
-                            return next;
-                          });
+                          if (isActive && filteredPick.length > 0) {
+                            e.preventDefault();
+                            setSelectedDropdownIndex(prev => {
+                              const next = Math.max(prev - 1, 0);
+                              document.getElementById(`dropdown-item-${next}`)?.scrollIntoView({ block: 'nearest' });
+                              return next;
+                            });
+                          } else {
+                            e.preventDefault();
+                            const prevInput = document.querySelector(`input[data-row="${i - 1}"][data-field="product"]`) as HTMLInputElement | null;
+                            if (prevInput) { prevInput.focus(); prevInput.select(); prevInput.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+                          }
+                        } else if (e.key === 'ArrowRight') {
+                          const target = e.currentTarget;
+                          const valLen = target.value.length;
+                          if (target.selectionStart === valLen && target.selectionEnd === valLen) {
+                            const rowInputs = Array.from(document.querySelectorAll(`input[data-row="${i}"]`));
+                            const currentIndex = rowInputs.indexOf(target);
+                            if (currentIndex >= 0 && currentIndex < rowInputs.length - 1) {
+                              e.preventDefault();
+                              const nextInput = rowInputs[currentIndex + 1] as HTMLInputElement;
+                              nextInput.focus(); nextInput.select();
+                            }
+                          }
                         }
                       }}
                     />
@@ -520,7 +717,7 @@ onKeyDown={e => {
                   {cols.free && <CellInput row={i} field="free" value={item.freeQuantity || ''} onChange={v => updateItem(i, 'freeQuantity', Number(v))} type="number" align="right" onEnter={() => goToNextRow(i)} />}
                   {cols.batch && <CellInput row={i} field="batch" value={item.batchNumber} onChange={v => updateItem(i, 'batchNumber', v)} mono onEnter={() => goToNextRow(i)} />}
                   {cols.expiry && <CellInput row={i} field="expiry" value={item.expiryDate} onChange={v => updateItem(i, 'expiryDate', v)} placeholder="MM/YY" onEnter={() => goToNextRow(i)} />}
-                  {!isRetail && <CellInput row={i} field="rate" value={item.unitPrice || ''} onChange={v => updateItem(i, 'unitPrice', Number(v))} type="number" align="right" mono onEnter={() => goToNextRow(i)} />}
+                  <CellInput row={i} field="rate" value={item.unitPrice || ''} onChange={v => updateItem(i, 'unitPrice', Number(v))} type="number" align="right" mono onEnter={() => goToNextRow(i)} />
                   {cols.disc && (
                     category === 'electronics'
                       ? <CellInput row={i} field="discAmt" value={item.discountAmount || ''} onChange={v => updateItem(i, 'discountAmount', Number(v))} type="number" align="right" onEnter={() => goToNextRow(i)} />
@@ -558,6 +755,28 @@ onKeyDown={e => {
         saving={saving} handleSubmit={handleSubmit} navigate={navigate}
         category={category} cols={cols}
       />
+
+      {/* Batch Selection Modal */}
+      <BatchSelectionModal
+        open={batchModalState.open}
+        productName={batchModalState.productName}
+        batches={batchModalState.batches}
+        selectedIndex={batchModalState.selectedIndex}
+        setSelectedIndex={(idxAction) => {
+          setBatchModalState(prev => ({
+            ...prev,
+            selectedIndex: typeof idxAction === 'function' ? idxAction(prev.selectedIndex) : idxAction
+          }));
+        }}
+        onSelect={(selectedBatch) => {
+          applySelectedItem(batchModalState.rowIndex, selectedBatch);
+          setBatchModalState(prev => ({ ...prev, open: false }));
+        }}
+        onClose={() => {
+          setBatchModalState(prev => ({ ...prev, open: false }));
+        }}
+        isRetail={isRetail}
+      />
     </div>
   );
 }
@@ -590,6 +809,7 @@ function ProductDropdown({ filteredPick, onSelect, category, selectedIndex = 0 }
               {category === 'pharma' && <th className="px-2 py-1.5 w-20">Location</th>}
               <th className="px-2 py-1.5 w-24">Company</th>
               <th className="px-2 py-1.5 w-20 text-right">MRP</th>
+              <th className="px-2 py-1.5 w-20 text-right">Sale Rate</th>
               <th className="px-2 py-1.5 w-16 text-right">Stock</th>
             </tr>
           </thead>
@@ -644,6 +864,9 @@ function ProductDropdown({ filteredPick, onSelect, category, selectedIndex = 0 }
                   <td className="px-2 py-1 text-right font-mono">
                     {s.mrp ? `₹${s.mrp.toFixed(2)}` : '-'}
                   </td>
+                  <td className="px-2 py-1 text-right font-mono font-semibold">
+                    {s.unitPrice ? `₹${s.unitPrice.toFixed(2)}` : (s as any).purchaseRate ? `₹${(s as any).purchaseRate.toFixed(2)}` : '-'}
+                  </td>
                   <td className={`px-2 py-1 text-right font-extrabold ${isSelected ? 'text-yellow-200' : s.isProduct ? 'text-muted-foreground' : 'text-primary'}`}>
                     {s.isProduct ? '∞' : (s.currentStock ?? 0)}
                   </td>
@@ -674,6 +897,7 @@ function ProductDropdown({ filteredPick, onSelect, category, selectedIndex = 0 }
             </div>
             <div className="flex items-center gap-3 font-mono text-[11px]">
               <span>MRP: <strong className="text-emerald-400 text-xs">₹{activeItem.mrp ? activeItem.mrp.toFixed(2) : '0.00'}</strong></span>
+              <span>Sale Rate: <strong className="text-blue-300 text-xs font-bold">₹{activeItem.unitPrice ? activeItem.unitPrice.toFixed(2) : (activeItem as any).purchaseRate ? (activeItem as any).purchaseRate.toFixed(2) : '0.00'}</strong></span>
               <span>Stock: <strong className={`text-xs ${activeItem.currentStock && activeItem.currentStock < 10 ? 'text-amber-400 font-black' : 'text-cyan-300 font-extrabold'}`}>{activeItem.isProduct ? '∞ Unlimited' : (activeItem.currentStock ?? 0)}</strong></span>
             </div>
           </div>
@@ -736,20 +960,50 @@ function PartySection({ isRetail, customerId, selectedCustomer, customerSearch, 
               )}
             </div>
             {showCustomerList && !customerId && (
-              <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-card border border-border rounded-md shadow-lg max-h-60 overflow-y-auto">
+              <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-card border border-border rounded-md shadow-lg max-h-64 overflow-y-auto">
+                <div className="px-2 py-1 bg-muted/80 text-[10px] font-bold text-muted-foreground border-b border-border flex justify-between items-center">
+                  <span>{isRetail ? 'Retail Customers' : 'Wholesale / Challan Parties'}</span>
+                  {!isRetail && (
+                    <button onClick={() => window.open('/customers', '_blank')} className="text-primary hover:underline text-[10px] font-semibold flex items-center gap-0.5">
+                      + Add Party in Customers Page
+                    </button>
+                  )}
+                </div>
                 <table className="w-full text-[10px]">
                   <thead className="bg-destructive text-destructive-foreground sticky top-0">
-                    <tr><th className="text-left px-2 py-1 font-semibold">Party Name</th><th className="text-left px-2 py-1 font-semibold hidden md:table-cell">Address</th><th className="text-left px-2 py-1 font-semibold hidden md:table-cell">GSTIN</th></tr>
+                    <tr><th className="text-left px-2 py-1 font-semibold">Party Name</th><th className="text-left px-2 py-1 font-semibold hidden md:table-cell">Type / GSTIN</th><th className="text-left px-2 py-1 font-semibold hidden md:table-cell">Address</th></tr>
                   </thead>
                   <tbody>
                     {filteredCustomers.map((c: any, idx: number) => (
                       <tr key={c.id} className={`cursor-pointer hover:bg-accent ${idx % 2 === 0 ? 'bg-accent/30' : 'bg-card'}`} onClick={() => selectCustomer(c)}>
-                        <td className="px-2 py-1 font-semibold text-foreground">{c.customerName}</td>
+                        <td className="px-2 py-1 font-semibold text-foreground">
+                          {c.customerName}
+                          <span className="md:hidden text-[9px] block text-muted-foreground">{c.customerType || 'Wholesaler'} {c.gstin ? `• GST: ${c.gstin}` : ''}</span>
+                        </td>
+                        <td className="px-2 py-1 text-muted-foreground hidden md:table-cell">
+                          <span className="font-semibold text-foreground">{c.customerType || 'Wholesaler'}</span>
+                          {c.gstin && <span className="font-mono text-[9px] block">{c.gstin}</span>}
+                        </td>
                         <td className="px-2 py-1 text-muted-foreground hidden md:table-cell truncate max-w-[200px]">{[c.billingAddress, c.billingCity, c.billingState].filter(Boolean).join(', ')}</td>
-                        <td className="px-2 py-1 font-mono text-muted-foreground hidden md:table-cell">{c.gstin || '-'}</td>
                       </tr>
                     ))}
-                    {!filteredCustomers.length && <tr><td colSpan={3} className="px-2 py-3 text-center text-muted-foreground">No parties found</td></tr>}
+                    {!filteredCustomers.length && (
+                      <tr>
+                        <td colSpan={3} className="px-3 py-4 text-center">
+                          <p className="text-muted-foreground text-[11px] font-medium">
+                            {isRetail ? 'No saved Retail customers found.' : 'No Wholesale / Challan party found.'}
+                          </p>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">
+                            {!isRetail ? 'Wholesale and Challan invoices require adding party details in Customers page first.' : 'Enter walk-in details above or save customer in Customers page.'}
+                          </p>
+                          {!isRetail && (
+                            <a href="/customers" target="_blank" rel="noopener noreferrer" className="inline-block mt-2 text-xs font-bold text-primary underline hover:text-primary/80">
+                              Go to Customers Page to Add Party →
+                            </a>
+                          )}
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -844,17 +1098,59 @@ function CellInput({ row, field, value, onChange, type = 'text', align, mono, bo
         className={`h-6 text-[11px] border-0 bg-transparent px-1 focus-visible:ring-1 focus-visible:ring-primary ${align === 'right' ? 'text-right' : ''} ${mono ? 'font-mono' : ''} ${bold ? 'font-bold' : ''}`}
         type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
         min={type === 'number' ? 0 : undefined} step={type === 'number' ? 'any' : undefined}
-onKeyDown={e => {
+        onKeyDown={e => {
+          const target = e.currentTarget;
           if (e.key === 'Enter') {
             e.preventDefault();
             const rowInputs = Array.from(document.querySelectorAll(`input[data-row="${row}"]`));
-            const currentIndex = rowInputs.indexOf(e.currentTarget as HTMLInputElement);
+            const currentIndex = rowInputs.indexOf(target);
             if (currentIndex >= 0 && currentIndex < rowInputs.length - 1) {
               const nextInput = rowInputs[currentIndex + 1] as HTMLInputElement;
               nextInput.focus();
               nextInput.select();
             } else {
               onEnter?.();
+            }
+          } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            const nextInput = document.querySelector(`input[data-row="${row + 1}"][data-field="${field}"]`) as HTMLInputElement | null;
+            if (nextInput) {
+              nextInput.focus();
+              nextInput.select();
+              nextInput.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            }
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            const prevInput = document.querySelector(`input[data-row="${row - 1}"][data-field="${field}"]`) as HTMLInputElement | null;
+            if (prevInput) {
+              prevInput.focus();
+              prevInput.select();
+              prevInput.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            }
+          } else if (e.key === 'ArrowLeft') {
+            const isAtStart = target.selectionStart === 0 && target.selectionEnd === 0;
+            if (isAtStart || target.type === 'number') {
+              const rowInputs = Array.from(document.querySelectorAll(`input[data-row="${row}"]`));
+              const currentIndex = rowInputs.indexOf(target);
+              if (currentIndex > 0) {
+                e.preventDefault();
+                const prevInput = rowInputs[currentIndex - 1] as HTMLInputElement;
+                prevInput.focus();
+                prevInput.select();
+              }
+            }
+          } else if (e.key === 'ArrowRight') {
+            const valLen = String(target.value || '').length;
+            const isAtEnd = target.selectionStart === valLen && target.selectionEnd === valLen;
+            if (isAtEnd || target.type === 'number') {
+              const rowInputs = Array.from(document.querySelectorAll(`input[data-row="${row}"]`));
+              const currentIndex = rowInputs.indexOf(target);
+              if (currentIndex >= 0 && currentIndex < rowInputs.length - 1) {
+                e.preventDefault();
+                const nextInput = rowInputs[currentIndex + 1] as HTMLInputElement;
+                nextInput.focus();
+                nextInput.select();
+              }
             }
           }
         }}
@@ -868,6 +1164,174 @@ function SummaryCell({ label, value, bold }: { label: string; value: string; bol
     <div className="text-center">
       <div className="text-[9px] text-muted-foreground">{label}</div>
       <div className={`font-mono leading-tight ${bold ? 'font-bold text-primary' : ''}`}>{value}</div>
+    </div>
+  );
+}
+
+// ─── Batch Selection Popup Modal for Multi-Batch Products ───
+function BatchSelectionModal({
+  open,
+  productName,
+  batches,
+  selectedIndex,
+  onSelect,
+  onClose,
+  setSelectedIndex,
+  isRetail,
+}: {
+  open: boolean;
+  productName: string;
+  batches: StockItem[];
+  selectedIndex: number;
+  onSelect: (batch: StockItem) => void;
+  onClose: () => void;
+  setSelectedIndex: React.Dispatch<React.SetStateAction<number>>;
+  isRetail: boolean;
+}) {
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        e.stopPropagation();
+        setSelectedIndex(prev => {
+          const next = Math.min(prev + 1, batches.length - 1);
+          document.getElementById(`batch-modal-row-${next}`)?.scrollIntoView({ block: 'nearest' });
+          return next;
+        });
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        e.stopPropagation();
+        setSelectedIndex(prev => {
+          const next = Math.max(prev - 1, 0);
+          document.getElementById(`batch-modal-row-${next}`)?.scrollIntoView({ block: 'nearest' });
+          return next;
+        });
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (batches[selectedIndex]) {
+          onSelect(batches[selectedIndex]);
+        }
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [open, batches, selectedIndex, onSelect, onClose, setSelectedIndex]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+      <div
+        ref={modalRef}
+        className="bg-card border-2 border-primary rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+      >
+        {/* Modal Header */}
+        <div className="bg-primary text-primary-foreground px-4 py-3 flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-extrabold text-sm sm:text-base">{productName}</span>
+              <span className="bg-primary-foreground/20 text-primary-foreground text-[10px] px-2 py-0.5 rounded-full font-bold">
+                {batches.length} Batches Available
+              </span>
+            </div>
+            <p className="text-[11px] text-primary-foreground/80 mt-0.5">
+              Select batch for this sale bill (Use ↑↓ arrows, press ENTER to confirm)
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-primary-foreground/80 hover:text-primary-foreground p-1 rounded-md hover:bg-primary-foreground/10 transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Modal Content Table */}
+        <div className="max-h-[60vh] overflow-y-auto p-2 bg-muted/20">
+          <table className="w-full text-xs text-left border-collapse">
+            <thead className="bg-muted text-muted-foreground font-bold sticky top-0 z-10 border-b border-border">
+              <tr>
+                <th className="px-3 py-2">Batch No</th>
+                <th className="px-3 py-2">Expiry Date</th>
+                <th className="px-3 py-2 text-right">M.R.P.</th>
+                <th className="px-3 py-2 text-right">{isRetail ? 'Retail Rate' : 'Purchase Rate'}</th>
+                <th className="px-3 py-2 text-right">Available Stock</th>
+                <th className="px-3 py-2 text-center w-20">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/40">
+              {batches.map((b, idx) => {
+                const isSelected = idx === selectedIndex;
+                const rate = isRetail ? (b.mrp || 0) : (b.unitPrice || (b as any).purchaseRate || 0);
+                return (
+                  <tr
+                    key={b.id || idx}
+                    id={`batch-modal-row-${idx}`}
+                    className={`cursor-pointer transition-colors ${
+                      isSelected
+                        ? 'bg-primary text-primary-foreground font-bold shadow-xs'
+                        : idx % 2 === 0
+                        ? 'bg-card hover:bg-primary/10'
+                        : 'bg-accent/30 hover:bg-primary/10'
+                    }`}
+                    onClick={() => onSelect(b)}
+                    onMouseEnter={() => setSelectedIndex(idx)}
+                  >
+                    <td className="px-3 py-2.5 font-mono font-semibold">
+                      {b.batchNumber || 'N/A'}
+                    </td>
+                    <td className="px-3 py-2.5 font-mono text-[11px]">
+                      {b.expiryDate ? `Exp: ${b.expiryDate}` : '-'}
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-mono font-bold">
+                      ₹{b.mrp ? b.mrp.toFixed(2) : '0.00'}
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-mono font-semibold">
+                      ₹{rate.toFixed(2)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-mono font-extrabold text-emerald-600 dark:text-emerald-400">
+                      {b.currentStock ?? 0}
+                    </td>
+                    <td className="px-3 py-2.5 text-center">
+                      <button
+                        type="button"
+                        className={`text-[10px] px-2 py-1 rounded font-bold transition-colors ${
+                          isSelected
+                            ? 'bg-primary-foreground text-primary'
+                            : 'bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground'
+                        }`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelect(b);
+                        }}
+                      >
+                        Select
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Modal Footer */}
+        <div className="bg-muted/50 px-4 py-2 text-[11px] text-muted-foreground flex items-center justify-between border-t border-border">
+          <span>Tip: Press <kbd className="px-1.5 py-0.5 rounded bg-background border font-mono text-[10px] font-bold text-foreground">↑</kbd> <kbd className="px-1.5 py-0.5 rounded bg-background border font-mono text-[10px] font-bold text-foreground">↓</kbd> to navigate, <kbd className="px-1.5 py-0.5 rounded bg-background border font-mono text-[10px] font-bold text-foreground">ENTER</kbd> to select, <kbd className="px-1.5 py-0.5 rounded bg-background border font-mono text-[10px] font-bold text-foreground">ESC</kbd> to cancel</span>
+          <Button variant="outline" size="sm" className="h-7 text-xs px-3" onClick={onClose}>
+            Cancel
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

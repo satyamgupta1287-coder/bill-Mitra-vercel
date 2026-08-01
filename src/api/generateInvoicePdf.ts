@@ -5,7 +5,7 @@ import { renderGeneralGst, renderIndianRetailBill, renderElectronicsInvoice, ren
 
 export default createEndpoint({
   authenticated: true,
-  inputSchema: z.object({ invoiceId: z.string() }),
+  inputSchema: z.object({ invoiceId: z.string(), templateOverride: z.string().optional() }),
   outputSchema: z.object({ url: z.string(), html: z.string().optional() }),
   execute: async ({ input, context }) => {
     const invoice = await Invoices.findOne({ id: input.invoiceId });
@@ -24,7 +24,31 @@ export default createEndpoint({
 
     // Get user template settings
     const userSettings = await UserSettings.findOne({ filters: { user: context.user.id } });
-    const templateName = userSettings?.selectedTemplate || 'Classic GST';
+
+    // Determine template to use:
+    // 1. Explicit templateOverride passed in request
+    // 2. Invoice's own selectedTemplate (if saved)
+    // 3. Template inferred from invoice.type (Wholesale -> Wholesale Invoice, Challan -> Delivery Challan, Retail -> Retail Invoice)
+    // 4. Default user setting or 'Classic GST'
+    let templateName = input.templateOverride || (invoice.selectedTemplate as string) || '';
+
+    if (!templateName && invoice.type) {
+      const invType = String(invoice.type).trim().toLowerCase();
+      if (invType.includes('wholesale')) {
+        templateName = 'Wholesale Invoice';
+      } else if (invType.includes('challan') || invType.includes('delivery')) {
+        templateName = 'Delivery Challan';
+      } else if (invType.includes('retail')) {
+        templateName = 'Retail Invoice';
+      } else if (invType.includes('proforma') || invType.includes('estimate')) {
+        templateName = 'Proforma Invoice';
+      }
+    }
+
+    if (!templateName) {
+      templateName = userSettings?.selectedTemplate || 'Classic GST';
+    }
+
     const opts = {
       showLogo: userSettings?.showLogo ?? true,
       showBankDetails: userSettings?.showBankDetails ?? true,

@@ -31,12 +31,24 @@ export default function InvoiceDetailPage() {
   const [paymentSaving, setPaymentSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  const [overrideTemplate, setOverrideTemplate] = useState<string>('');
+
   useEffect(() => {
     if (!id) return;
-    getInvoiceDetail({ invoiceId: id }).then(setData).finally(() => setLoading(false));
+    getInvoiceDetail({ invoiceId: id }).then(res => {
+      setData(res);
+      if (res?.invoice?.selectedTemplate) {
+        setOverrideTemplate(res.invoice.selectedTemplate);
+      } else if (res?.invoice?.type === 'Wholesale') {
+        setOverrideTemplate('Wholesale Invoice');
+      } else if (res?.invoice?.type === 'Challan') {
+        setOverrideTemplate('Delivery Challan');
+      } else if (res?.invoice?.type === 'Retail Sale') {
+        setOverrideTemplate('Retail Invoice');
+      }
+    }).finally(() => setLoading(false));
   }, [id]);
 
-  
   const handleDelete = async () => {
     if (!id) return;
     if (!confirm('Are you sure you want to delete this invoice? This action cannot be undone.')) return;
@@ -55,7 +67,7 @@ export default function InvoiceDetailPage() {
     if (!id) return;
     setGenerating(true);
     try {
-      const { url, html } = await generateInvoicePdf({ invoiceId: id }) as any;
+      const { url, html } = await generateInvoicePdf({ invoiceId: id, templateOverride: overrideTemplate || undefined }) as any;
       if (html) {
         const printWindow = window.open('', '_blank');
         if (printWindow) {
@@ -116,7 +128,35 @@ export default function InvoiceDetailPage() {
             <p className="text-sm text-muted-foreground">{invoice.type} • {formatDate(invoice.invoiceDate)}</p>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={overrideTemplate}
+            onChange={e => setOverrideTemplate(e.target.value)}
+            className="h-9 text-xs border rounded-md px-2 bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+          >
+            <option value="">Auto (Default for {invoice.type})</option>
+            <optgroup label="Pharma / Medical">
+              <option value="Classic GST">Classic GST</option>
+              <option value="Modern GST">Modern GST</option>
+              <option value="Retail Invoice">Retail Invoice</option>
+              <option value="Wholesale Invoice">Wholesale Invoice</option>
+              <option value="Delivery Challan">Delivery Challan</option>
+              <option value="Tax Invoice Premium">Tax Invoice Premium</option>
+            </optgroup>
+            <optgroup label="General">
+              <option value="General GST">General GST</option>
+              <option value="Indian Retail Bill">Indian Retail Bill</option>
+              <option value="Proforma Invoice">Proforma Invoice</option>
+              <option value="Thermal Receipt">Thermal Receipt</option>
+            </optgroup>
+            <optgroup label="Industry Specific">
+              <option value="Electronics / Mobile">Electronics / Mobile</option>
+              <option value="Restaurant / Food">Restaurant / Food</option>
+              <option value="Grocery / Kirana">Grocery / Kirana</option>
+              <option value="Furniture / Hardware">Furniture / Hardware</option>
+              <option value="Services Invoice">Services Invoice</option>
+            </optgroup>
+          </select>
           <Button variant="outline" onClick={() => navigate('/invoices/' + invoice.id + '/edit')}><Edit className="w-4 h-4 mr-2" />Edit</Button>
           <Button variant="outline" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={handleDelete} disabled={deleting}><Trash2 className="w-4 h-4 mr-2" />{deleting ? 'Deleting...' : 'Delete'}</Button>
           {invoice.status !== 'Paid' && invoice.status !== 'Cancelled' && (

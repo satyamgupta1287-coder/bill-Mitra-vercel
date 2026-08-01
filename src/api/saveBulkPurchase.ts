@@ -8,13 +8,15 @@ export default createEndpoint({
     supplierId: z.string().optional(),
     supplierInvoiceNumber: z.string().optional(),
     items: z.array(z.object({
-      productId: z.string(),
+      productId: z.string().optional(),
       itemName: z.string(),
+      hsnSacCode: z.string().optional(),
       batchNumber: z.string(),
       expiryDate: z.string().optional(),
       quantity: z.number(),
       freeQuantity: z.number().optional(),
       purchaseRate: z.number(),
+      saleRate: z.number().optional(),
       mrp: z.number(),
       gstPercentage: z.number(),
       manufacturer: z.string().optional(),
@@ -34,11 +36,39 @@ export default createEndpoint({
 
     const invoiceRef = [input.supplierInvoiceNumber, supplierName].filter(Boolean).join(' | ');
 
+    // Handle missing product IDs by matching existing product names or creating new ones
+    const { records: userProducts } = await Products.findAll({ filters: { owner: context.user.id }, limit: 500 });
+
+    for (const item of input.items) {
+      if (!item.productId) {
+        const trimmedName = item.itemName.trim().toLowerCase();
+        const matched = userProducts.find((p: any) => p.productName && p.productName.trim().toLowerCase() === trimmedName);
+        if (matched) {
+          item.productId = matched.id;
+        } else {
+          const newProdRec: any = {
+            productName: item.itemName,
+            hsnSacCode: item.hsnSacCode || '',
+            packSize: item.packSize || '',
+            manufacturer: item.manufacturer || '',
+            unitPrice: item.saleRate || item.mrp || item.purchaseRate,
+            mrp: item.mrp,
+            gstPercentage: item.gstPercentage,
+            stockQuantity: 0,
+            status: 'Active',
+            owner: context.user.id
+          };
+          if (companyId) newProdRec.company = companyId;
+          const newProd = await Products.create({ record: newProdRec });
+          item.productId = newProd.id;
+        }
+      }
+    }
+
     const records = input.items.map(item => {
       const gstAmt = item.quantity * item.purchaseRate * (item.gstPercentage / 100);
       const totalAmt = item.quantity * item.purchaseRate + gstAmt;
       const totalStock = item.quantity + (item.freeQuantity || 0);
-
       const rec: any = {
         purchaseNumber: refNum,
         purchaseDate: input.purchaseDate,
@@ -49,6 +79,7 @@ export default createEndpoint({
         quantity: item.quantity,
         freeQuantity: item.freeQuantity || 0,
         purchaseRate: item.purchaseRate,
+        unitPrice: item.saleRate || item.purchaseRate,
         mrp: item.mrp,
         gstPercentage: item.gstPercentage,
         totalAmount: totalAmt,
@@ -62,15 +93,17 @@ export default createEndpoint({
 
     await Purchases.bulkCreate({ records });
 
-    const productUpdates = new Map<string, { addStock: number; mrp: number }>();
+    const productUpdates = new Map<string, { addStock: number; mrp: number; saleRate?: number }>();
     for (const item of input.items) {
+      if (!item.productId) continue;
       const totalStock = item.quantity + (item.freeQuantity || 0);
       const existing = productUpdates.get(item.productId);
       if (existing) {
         existing.addStock += totalStock;
         existing.mrp = item.mrp;
+        if (item.saleRate) existing.saleRate = item.saleRate;
       } else {
-        productUpdates.set(item.productId, { addStock: totalStock, mrp: item.mrp });
+        productUpdates.set(item.productId, { addStock: totalStock, mrp: item.mrp, saleRate: item.saleRate });
       }
     }
 
@@ -79,7 +112,12 @@ export default createEndpoint({
       const { records: products } = await Products.findAll({ filters: { id: { in: prodIds } }, limit: 200 });
       for (const p of products) {
         const upd = productUpdates.get(p.id);
-        await Products.update({ id: p.id, record: { stockQuantity: (p.stockQuantity || 0) + (upd?.addStock || 0), mrp: upd?.mrp || p.mrp } });
+        const updRec: any = {
+          stockQuantity: (p.stockQuantity || 0) + (upd?.addStock || 0),
+          mrp: upd?.mrp || p.mrp,
+        };
+        if (upd?.saleRate) updRec.unitPrice = upd.saleRate;
+        await Products.update({ id: p.id, record: updRec });
       }
     }
 

@@ -74,7 +74,7 @@ export function renderClassicGst(company: any, invoice: any, customer: any, item
       <td style="text-align:center">${i+1}</td><td>${esc(item.itemName)}</td><td class="mono">${esc(item.hsnSacCode)}</td>
       <td>${esc(item.manufacturer)}</td><td style="text-align:center">${esc(item.packSize)}</td><td style="text-align:center">${qtyStr}</td>
       <td>${esc(item.batchNumber)}</td><td style="text-align:center">${esc(item.expiryDate)}</td><td style="text-align:right">${fmt(num(item.mrp))}</td>
-      ${config.title === 'Retail Sale' ? '' : `<td style="text-align:right">${fmt(num(item.unitPrice))}</td>`}<td style="text-align:center">${num(item.discountPercent) > 0 ? num(item.discountPercent).toFixed(2) : '-'}</td>
+      <td style="text-align:right">${fmt(num(item.unitPrice))}</td><td style="text-align:center">${num(item.discountPercent) > 0 ? num(item.discountPercent).toFixed(2) : '-'}</td>
       <td style="text-align:right;font-weight:600">${fmt(num(item.total))}</td><td style="text-align:center">${num(item.gstPercentage)}%</td><td style="text-align:right">${fmt(num(item.taxableAmount))}</td>
     </tr>`;
   }).join('');
@@ -231,6 +231,7 @@ function generatePharmaHtml(company: any, invoice: any, customer: any, items: an
   `).join('');
 
   const showCust = config.showCustomer;
+  const isChallan = config.title === 'DELIVERY CHALLAN' || String(invoice.type || '').toUpperCase().includes('CHALLAN');
 
   return `<!doctype html>
 <html>
@@ -275,6 +276,11 @@ td { padding: 4px 4px; border: 1px solid #000; font-size: 8pt; }
 </head>
 <body>
 <div class="wrap">
+  ${isChallan ? `
+  <div class="hdr" style="justify-content:center;align-items:center;padding:12px;background:#f8f8f8">
+    <div style="font-size:18pt;font-weight:900;letter-spacing:2px;text-align:center;width:100%">DELIVERY CHALLAN</div>
+  </div>
+  ` : `
   <div class="hdr">
     ${opts.showLogo && company?.logo?.[0]?.url ? `<div class="hdr-l"><img src="${company.logo[0].url}" style="max-width:100px;max-height:80px;object-fit:contain;"/></div>` : ''}
     <div class="hdr-c">
@@ -291,9 +297,10 @@ td { padding: 4px 4px; border: 1px solid #000; font-size: 8pt; }
       </div>
     </div>
   </div>
+  `}
   
   <div class="row-box">
-    <div class="col-box" style="flex:0.6">Inv No.: <b>${esc(invoice.invoiceNumber)}</b></div>
+    <div class="col-box" style="flex:0.6">${isChallan ? 'Challan No.:' : 'Inv No.:'} <b>${esc(invoice.invoiceNumber)}</b></div>
     <div class="col-box" style="flex:0.8">Date: <b>${esc(invoice.invoiceDate)}</b></div>
     <div class="col-box">Due: ${esc(invoice.dueDate || '-')}</div>
   </div>
@@ -306,6 +313,7 @@ td { padding: 4px 4px; border: 1px solid #000; font-size: 8pt; }
   ${showCust ? `
   <div class="row-box" style="min-height: 50px;">
     <div class="col-box" style="flex:1.4">
+      <span style="color:#666;font-size:7pt">CUSTOMER / PARTY DETAILS</span><br/>
       <b>${esc(customer?.customerName || '-')}</b><br/>
       ${esc(customer?.billingAddress || '')}<br/>
       ${customer?.phone ? 'Ph: ' + esc(customer.phone) : ''}
@@ -330,7 +338,7 @@ td { padding: 4px 4px; border: 1px solid #000; font-size: 8pt; }
           <th>BATCH</th>
           <th>EXP</th>
           <th style="text-align:right">MRP</th>
-          ${config.title === 'Retail Sale' ? '' : '<th style="text-align:right">RATE</th>'}
+          <th style="text-align:right">RATE</th>
           <th>DISC%</th>
           <th style="text-align:right">AMOUNT</th>
           <th>GST%</th>
@@ -354,7 +362,7 @@ td { padding: 4px 4px; border: 1px solid #000; font-size: 8pt; }
           ${gstRows}
         </tbody>
       </table>
-      ${opts.showBankDetails && company?.bankName ? `<div class="bank-info">BANK: ${esc(company.bankName)} | A/C: ${esc(company.accountNumber)} | IFSC: ${esc(company.ifscCode)}${company?.upiId ? ' | UPI: ' + esc(company.upiId) : ''}</div>` : ''}
+      ${!isChallan && opts.showBankDetails && company?.bankName ? `<div class="bank-info">BANK: ${esc(company.bankName)} | A/C: ${esc(company.accountNumber)} | IFSC: ${esc(company.ifscCode)}${company?.upiId ? ' | UPI: ' + esc(company.upiId) : ''}</div>` : ''}
     </div>
     <div class="bot-right">
       <div class="calc-row"><span>Gross Amount</span><span>${fmt(num(invoice.totalAmount) + num(invoice.discountAmount) - num(invoice.roundOff))}</span></div>
@@ -372,11 +380,16 @@ td { padding: 4px 4px; border: 1px solid #000; font-size: 8pt; }
 
   <div class="footer">
     <div class="terms">
-      <b>TERMS:</b> ${esc(company?.termsAndConditions || 'Medicines once sold will not be taken back. Subject to local jurisdiction.')}
+      <b>TERMS:</b> ${esc(isChallan ? 'Delivery Challan for goods movement. Not a Tax Invoice.' : (company?.termsAndConditions || 'Medicines once sold will not be taken back. Subject to local jurisdiction.'))}
     </div>
     <div class="sign">
-      <div style="text-align:center;font-weight:bold;text-decoration:underline;margin-bottom:20px">FOR ${esc(company?.companyName)}</div>
-      <div style="border-top:1px solid #000;text-align:center;padding-top:2px">AUTHORISED SIGNATORY</div>
+      ${isChallan ? `
+        <div style="text-align:center;font-weight:bold;margin-bottom:20px">RECEIVER'S SIGNATURE</div>
+        <div style="border-top:1px solid #000;text-align:center;padding-top:2px">AUTHORISED SIGNATORY</div>
+      ` : `
+        <div style="text-align:center;font-weight:bold;text-decoration:underline;margin-bottom:20px">FOR ${esc(company?.companyName)}</div>
+        <div style="border-top:1px solid #000;text-align:center;padding-top:2px">AUTHORISED SIGNATORY</div>
+      `}
     </div>
   </div>
 </div>
@@ -385,15 +398,15 @@ td { padding: 4px 4px; border: 1px solid #000; font-size: 8pt; }
 }
 
 export function renderRetailInvoice(company: any, invoice: any, customer: any, items: any[], opts: Opts): string {
-  return generatePharmaHtml(company, invoice, customer, items, opts, { title: 'Retail Sale', showCustomer: true });
+  return generatePharmaHtml(company, invoice, customer, items, opts, { title: 'RETAIL SALE INVOICE', showCustomer: true });
 }
 
 export function renderWholesaleInvoice(company: any, invoice: any, customer: any, items: any[], opts: Opts): string {
-  return generatePharmaHtml(company, invoice, customer, items, opts, { title: 'Wholesale Sale', showCustomer: true });
+  return generatePharmaHtml(company, invoice, customer, items, opts, { title: 'WHOLESALE TAX INVOICE', showCustomer: true });
 }
 
 export function renderPharmaChallan(company: any, invoice: any, customer: any, items: any[], opts: Opts): string {
-  return generatePharmaHtml(company, invoice, customer, items, opts, { title: 'Challan Sale', showCustomer: false });
+  return generatePharmaHtml(company, invoice, customer, items, opts, { title: 'DELIVERY CHALLAN', showCustomer: true });
 }
 // ─── TAX INVOICE PREMIUM ───
 export function renderTaxInvoicePremium(company: any, invoice: any, customer: any, items: any[], opts: Opts): string {

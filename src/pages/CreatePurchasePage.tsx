@@ -14,6 +14,7 @@ type LineItem = {
   quantity: number;
   freeQuantity: number;
   purchaseRate: number;
+  saleRate: number;
   mrp: number;
   gstPercentage: number;
   batchNumber: string;
@@ -24,7 +25,7 @@ type LineItem = {
 
 const emptyItem = (): LineItem => ({
   itemName: '', hsnSacCode: '', quantity: 1, freeQuantity: 0,
-  purchaseRate: 0, mrp: 0, gstPercentage: 12,
+  purchaseRate: 0, saleRate: 0, mrp: 0, gstPercentage: 12,
   batchNumber: '', expiryDate: '', manufacturer: '', packSize: '',
 });
 
@@ -77,6 +78,47 @@ export default function CreatePurchasePage() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+N or Cmd+N -> Add new product row
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        e.stopPropagation();
+        setItems(prev => {
+          const nextRowIndex = prev.length;
+          focusField(nextRowIndex, 'product');
+          return [...prev, emptyItem()];
+        });
+        toast.info('New product row added (Ctrl+N)');
+      }
+      // Ctrl+T or Cmd+T -> Delete focused item
+      else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 't') {
+        e.preventDefault();
+        e.stopPropagation();
+        const activeEl = document.activeElement as HTMLElement | null;
+        let targetRowIndex = -1;
+        if (activeEl && activeEl.getAttribute('data-row') !== null) {
+          targetRowIndex = parseInt(activeEl.getAttribute('data-row') || '-1', 10);
+        }
+        setItems(prev => {
+          if (prev.length <= 1) {
+            toast.warning('At least one row is required');
+            return prev;
+          }
+          const delIdx = (targetRowIndex >= 0 && targetRowIndex < prev.length) ? targetRowIndex : prev.length - 1;
+          const updated = prev.filter((_, idx) => idx !== delIdx);
+          const nextFocus = Math.max(0, delIdx - 1);
+          focusField(nextFocus, 'product');
+          toast.info(`Product row ${delIdx + 1} deleted (Ctrl+T)`);
+          return updated;
+        });
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, []);
+
   const selectedSupplier = suppliers.find(s => s.id === supplierId);
 
   const filteredSuppliers = suppliers.filter(s =>
@@ -118,7 +160,8 @@ export default function CreatePurchasePage() {
         productId: p.id,
         hsnSacCode: p.hsnSacCode || '',
         mrp: p.mrp || 0,
-        purchaseRate: p.unitPrice || 0,
+        purchaseRate: (p as any).purchaseRate || p.unitPrice || 0,
+        saleRate: p.unitPrice || p.mrp || 0,
         gstPercentage: p.gstPercentage || 12,
         manufacturer: p.manufacturer || '',
         packSize: p.packSize || '',
@@ -246,6 +289,7 @@ export default function CreatePurchasePage() {
                 quantity: Number(aiItem.quantity) || 1,
                 freeQuantity: Number(aiItem.freeQuantity) || 0,
                 purchaseRate: Number(aiItem.purchaseRate) || matchedProd?.unitPrice || 0,
+                saleRate: Number(aiItem.saleRate) || Number(aiItem.unitPrice) || matchedProd?.unitPrice || 0,
                 mrp: Number(aiItem.mrp) || matchedProd?.mrp || 0,
                 gstPercentage: Number(aiItem.gstPercentage) || matchedProd?.gstPercentage || 12,
                 batchNumber: aiItem.batchNumber || '',
@@ -299,13 +343,15 @@ export default function CreatePurchasePage() {
         supplierId: supplierId || undefined,
         supplierInvoiceNumber: supplierInvoiceNumber || undefined,
         items: filledItems.map(i => ({
-          productId: i.productId!,
+          productId: i.productId || undefined,
           itemName: i.itemName,
+          hsnSacCode: i.hsnSacCode || undefined,
           batchNumber: i.batchNumber,
           expiryDate: i.expiryDate || undefined,
           quantity: i.quantity,
           freeQuantity: i.freeQuantity || undefined,
           purchaseRate: i.purchaseRate,
+          saleRate: i.saleRate || undefined,
           mrp: i.mrp || 0,
           gstPercentage: i.gstPercentage,
           manufacturer: i.manufacturer || undefined,
@@ -419,7 +465,8 @@ export default function CreatePurchasePage() {
               <th className="text-left px-1.5 py-1.5 w-16">Expiry</th>
               <th className="text-right px-1.5 py-1.5 w-12">Qty</th>
               <th className="text-right px-1.5 py-1.5 w-10">Free</th>
-              <th className="text-right px-1.5 py-1.5 w-16">Rate</th>
+              <th className="text-right px-1.5 py-1.5 w-16" title="Purchase Cost Rate">Pur. Rate</th>
+              <th className="text-right px-1.5 py-1.5 w-16 text-blue-300 font-bold" title="Selling Rate for Invoices">Sale Rate</th>
               <th className="text-right px-1.5 py-1.5 w-16">MRP</th>
               <th className="text-right px-1.5 py-1.5 w-10">GST%</th>
               <th className="text-right px-1.5 py-1.5 w-20">Amount</th>
@@ -473,19 +520,43 @@ onKeyDown={e => {
                         } else if (e.key === 'Escape') {
                           setActiveProductRow(null);
                         } else if (e.key === 'ArrowDown') {
-                          e.preventDefault();
-                          setSelectedDropdownIndex(prev => {
-                            const next = Math.min(prev + 1, filteredProducts.slice(0, 50).length - 1);
-                            document.getElementById(`purchase-dropdown-item-${next}`)?.scrollIntoView({ block: 'nearest' });
-                            return next;
-                          });
+                          if (isActive && filteredProducts.length > 0) {
+                            e.preventDefault();
+                            setSelectedDropdownIndex(prev => {
+                              const next = Math.min(prev + 1, filteredProducts.slice(0, 50).length - 1);
+                              document.getElementById(`purchase-dropdown-item-${next}`)?.scrollIntoView({ block: 'nearest' });
+                              return next;
+                            });
+                          } else {
+                            e.preventDefault();
+                            const nextInput = document.querySelector(`input[data-row="${i + 1}"][data-field="product"]`) as HTMLInputElement | null;
+                            if (nextInput) { nextInput.focus(); nextInput.select(); nextInput.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+                          }
                         } else if (e.key === 'ArrowUp') {
-                          e.preventDefault();
-                          setSelectedDropdownIndex(prev => {
-                            const next = Math.max(prev - 1, 0);
-                            document.getElementById(`purchase-dropdown-item-${next}`)?.scrollIntoView({ block: 'nearest' });
-                            return next;
-                          });
+                          if (isActive && filteredProducts.length > 0) {
+                            e.preventDefault();
+                            setSelectedDropdownIndex(prev => {
+                              const next = Math.max(prev - 1, 0);
+                              document.getElementById(`purchase-dropdown-item-${next}`)?.scrollIntoView({ block: 'nearest' });
+                              return next;
+                            });
+                          } else {
+                            e.preventDefault();
+                            const prevInput = document.querySelector(`input[data-row="${i - 1}"][data-field="product"]`) as HTMLInputElement | null;
+                            if (prevInput) { prevInput.focus(); prevInput.select(); prevInput.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+                          }
+                        } else if (e.key === 'ArrowRight') {
+                          const target = e.currentTarget;
+                          const valLen = target.value.length;
+                          if (target.selectionStart === valLen && target.selectionEnd === valLen) {
+                            const rowInputs = Array.from(document.querySelectorAll(`input[data-row="${i}"]`));
+                            const currentIndex = rowInputs.indexOf(target);
+                            if (currentIndex >= 0 && currentIndex < rowInputs.length - 1) {
+                              e.preventDefault();
+                              const nextInput = rowInputs[currentIndex + 1] as HTMLInputElement;
+                              nextInput.focus(); nextInput.select();
+                            }
+                          }
                         }
                       }}
                     />
@@ -535,7 +606,7 @@ onKeyDown={e => {
                                 <th className="px-2 py-1.5 w-20">Location</th>
                                 <th className="px-2 py-1.5 w-24">Company</th>
                                 <th className="px-2 py-1.5 w-20 text-right">MRP</th>
-                                <th className="px-2 py-1.5 w-20 text-right">Cost Rate</th>
+                                <th className="px-2 py-1.5 w-20 text-right">Sale Rate</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -598,7 +669,7 @@ onKeyDown={e => {
                               </div>
                               <div className="flex items-center gap-3 font-mono text-[11px]">
                                 <span>MRP: <strong className="text-emerald-400 text-xs">₹{filteredProducts[selectedDropdownIndex].mrp ? filteredProducts[selectedDropdownIndex].mrp.toFixed(2) : '0.00'}</strong></span>
-                                <span>Cost Rate: <strong className="text-cyan-300 text-xs font-extrabold">₹{filteredProducts[selectedDropdownIndex].unitPrice ? filteredProducts[selectedDropdownIndex].unitPrice.toFixed(2) : '0.00'}</strong></span>
+                                <span>Sale Rate: <strong className="text-cyan-300 text-xs font-extrabold">₹{filteredProducts[selectedDropdownIndex].unitPrice ? filteredProducts[selectedDropdownIndex].unitPrice.toFixed(2) : '0.00'}</strong></span>
                               </div>
                             </div>
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px] pt-1 border-t border-slate-800 text-slate-300">
@@ -624,7 +695,8 @@ onKeyDown={e => {
                   <CellInput row={i} field="expiry" value={item.expiryDate} onChange={v => updateItem(i, 'expiryDate', v)} placeholder="MM/YY" onEnter={() => focusField(i, 'qty')} />
                   <CellInput row={i} field="qty" value={item.quantity || ''} onChange={v => updateItem(i, 'quantity', Number(v))} type="number" align="right" bold onEnter={() => focusField(i, 'free')} />
                   <CellInput row={i} field="free" value={item.freeQuantity || ''} onChange={v => updateItem(i, 'freeQuantity', Number(v))} type="number" align="right" onEnter={() => focusField(i, 'rate')} />
-                  <CellInput row={i} field="rate" value={item.purchaseRate || ''} onChange={v => updateItem(i, 'purchaseRate', Number(v))} type="number" align="right" mono onEnter={() => focusField(i, 'mrp')} />
+                  <CellInput row={i} field="rate" value={item.purchaseRate || ''} onChange={v => updateItem(i, 'purchaseRate', Number(v))} type="number" align="right" mono onEnter={() => focusField(i, 'saleRate')} />
+                  <CellInput row={i} field="saleRate" value={item.saleRate || ''} onChange={v => updateItem(i, 'saleRate', Number(v))} type="number" align="right" mono onEnter={() => focusField(i, 'mrp')} />
                   <CellInput row={i} field="mrp" value={item.mrp || ''} onChange={v => updateItem(i, 'mrp', Number(v))} type="number" align="right" mono onEnter={() => focusField(i, 'gst')} />
                   <CellInput row={i} field="gst" value={item.gstPercentage || ''} onChange={v => updateItem(i, 'gstPercentage', Number(v))} type="number" align="right" onEnter={() => goToNextRow(i)} />
                   <td className="px-1.5 py-0.5 text-right font-mono font-bold text-[11px]">{item.itemName ? amt.toFixed(2) : ''}</td>
@@ -676,17 +748,59 @@ function CellInput({ row, field, value, onChange, type = 'text', align, mono, bo
         className={`h-6 text-[11px] border-0 bg-transparent px-1 focus-visible:ring-1 focus-visible:ring-primary ${align === 'right' ? 'text-right' : ''} ${mono ? 'font-mono' : ''} ${bold ? 'font-bold' : ''}`}
         type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
         min={type === 'number' ? 0 : undefined} step={type === 'number' ? 'any' : undefined}
-onKeyDown={e => {
+        onKeyDown={e => {
+          const target = e.currentTarget;
           if (e.key === 'Enter') {
             e.preventDefault();
             const rowInputs = Array.from(document.querySelectorAll(`input[data-row="${row}"]`));
-            const currentIndex = rowInputs.indexOf(e.currentTarget as HTMLInputElement);
+            const currentIndex = rowInputs.indexOf(target);
             if (currentIndex >= 0 && currentIndex < rowInputs.length - 1) {
               const nextInput = rowInputs[currentIndex + 1] as HTMLInputElement;
               nextInput.focus();
               nextInput.select();
             } else {
               onEnter?.();
+            }
+          } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            const nextInput = document.querySelector(`input[data-row="${row + 1}"][data-field="${field}"]`) as HTMLInputElement | null;
+            if (nextInput) {
+              nextInput.focus();
+              nextInput.select();
+              nextInput.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            }
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            const prevInput = document.querySelector(`input[data-row="${row - 1}"][data-field="${field}"]`) as HTMLInputElement | null;
+            if (prevInput) {
+              prevInput.focus();
+              prevInput.select();
+              prevInput.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            }
+          } else if (e.key === 'ArrowLeft') {
+            const isAtStart = target.selectionStart === 0 && target.selectionEnd === 0;
+            if (isAtStart || target.type === 'number') {
+              const rowInputs = Array.from(document.querySelectorAll(`input[data-row="${row}"]`));
+              const currentIndex = rowInputs.indexOf(target);
+              if (currentIndex > 0) {
+                e.preventDefault();
+                const prevInput = rowInputs[currentIndex - 1] as HTMLInputElement;
+                prevInput.focus();
+                prevInput.select();
+              }
+            }
+          } else if (e.key === 'ArrowRight') {
+            const valLen = String(target.value || '').length;
+            const isAtEnd = target.selectionStart === valLen && target.selectionEnd === valLen;
+            if (isAtEnd || target.type === 'number') {
+              const rowInputs = Array.from(document.querySelectorAll(`input[data-row="${row}"]`));
+              const currentIndex = rowInputs.indexOf(target);
+              if (currentIndex >= 0 && currentIndex < rowInputs.length - 1) {
+                e.preventDefault();
+                const nextInput = rowInputs[currentIndex + 1] as HTMLInputElement;
+                nextInput.focus();
+                nextInput.select();
+              }
             }
           }
         }}
