@@ -4,7 +4,8 @@ import { useAuth } from 'zite-auth-sdk';
 import { useTheme } from './ThemeProvider';
 import {
   LayoutDashboard, Users, Package, FileText, Settings, BarChart3,
-  Sun, Moon, LogOut, Menu, X, ChevronRight, Receipt, ShoppingCart, Truck, KeyRound
+  Sun, Moon, LogOut, Menu, X, ChevronRight, Receipt, ShoppingCart, Truck, KeyRound,
+  Layers, MapPin
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 

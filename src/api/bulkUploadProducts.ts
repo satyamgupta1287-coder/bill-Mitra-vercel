@@ -16,6 +16,10 @@ export default createEndpoint({
       manufacturer: z.string().optional(),
       packSize: z.string().optional(),
       mrp: z.number().optional(),
+      composition: z.string().optional(),
+      rackLocation: z.string().optional(),
+      scheduleDrug: z.boolean().optional(),
+      minStockLevel: z.number().optional(),
     })),
   }),
   outputSchema: z.object({

@@ -12,34 +12,53 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
-import { Plus, Search, Edit, Trash2, Package, Factory, Upload, Download, FileSpreadsheet, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, Package, Factory, Upload, Download, FileSpreadsheet, CheckCircle2, AlertCircle, FlaskConical, MapPin, Layers } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 
+import CompositionsPage from './CompositionsPage';
+import LocationsPage from './LocationsPage';
+
 export default function ProductsPage() {
-  const [tab, setTab] = useState<'products' | 'manufacturers'>('products');
+  const [tab, setTab] = useState<'products' | 'compositions' | 'racks' | 'manufacturers'>('products');
 
   return (
     <div className="p-4 md:p-6 lg:p-8 space-y-6">
-      <div className="flex gap-1 border-b border-border">
+      <div className="flex gap-1 border-b border-border overflow-x-auto scrollbar-none">
         <button
-          className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${tab === 'products' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+          className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors shrink-0 ${tab === 'products' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
           onClick={() => setTab('products')}
         >
-          <Package className="w-4 h-4 inline mr-1.5" />Products
+          <Package className="w-4 h-4 inline mr-1.5" />Products & Items
         </button>
         <button
-          className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${tab === 'manufacturers' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+          className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors shrink-0 ${tab === 'compositions' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+          onClick={() => setTab('compositions')}
+        >
+          <FlaskConical className="w-4 h-4 inline mr-1.5 text-blue-500" />Composition Master
+        </button>
+        <button
+          className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors shrink-0 ${tab === 'racks' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+          onClick={() => setTab('racks')}
+        >
+          <MapPin className="w-4 h-4 inline mr-1.5 text-amber-500" />Product Location Master
+        </button>
+        <button
+          className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors shrink-0 ${tab === 'manufacturers' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
           onClick={() => setTab('manufacturers')}
         >
           <Factory className="w-4 h-4 inline mr-1.5" />Manufacturers
         </button>
       </div>
-      {tab === 'products' ? <ProductsTab /> : <ManufacturersTab />}
+
+      {tab === 'products' && <ProductsTab onSwitchTab={setTab} />}
+      {tab === 'compositions' && <CompositionsPage />}
+      {tab === 'racks' && <LocationsPage />}
+      {tab === 'manufacturers' && <ManufacturersTab />}
     </div>
   );
 }
 
-function ProductsTab() {
+function ProductsTab({ onSwitchTab }: { onSwitchTab?: (t: any) => void }) {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -52,6 +71,8 @@ function ProductsTab() {
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [totalLoaded, setTotalLoaded] = useState(0);
+  const [selectedComposition, setSelectedComposition] = useState<string>('all');
+  const [selectedRack, setSelectedRack] = useState<string>('all');
 
   const load = useCallback((s?: string) => {
     setLoading(true);
@@ -104,6 +125,15 @@ function ProductsTab() {
     finally { setSaving(false); }
   };
 
+  const allCompositions = Array.from(new Set(products.map(p => p.composition).filter(Boolean)));
+  const allRacks = Array.from(new Set(products.map(p => p.rackLocation).filter(Boolean)));
+
+  const displayedProducts = products.filter(p => {
+    if (selectedComposition !== 'all' && p.composition !== selectedComposition) return false;
+    if (selectedRack !== 'all' && p.rackLocation !== selectedRack) return false;
+    return true;
+  });
+
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
@@ -119,18 +149,79 @@ function ProductsTab() {
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold">Products & Services</h1>
-          <p className="text-sm text-muted-foreground">{products.length}{hasMore ? '+' : ''} items</p>
+          <p className="text-sm text-muted-foreground">{products.length}{hasMore ? '+' : ''} items in inventory</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setUploadOpen(true)}><Upload className="w-4 h-4 mr-2" />Upload Excel</Button>
-          <Button onClick={() => openDialog()}><Plus className="w-4 h-4 mr-2" />Add Product</Button>
+        <div className="flex flex-wrap gap-2">
+          {onSwitchTab && (
+            <>
+              <Button variant="outline" size="sm" onClick={() => onSwitchTab('compositions')}>
+                <FlaskConical className="w-4 h-4 mr-1.5 text-blue-500" />Formula / Salt List ({allCompositions.length})
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => onSwitchTab('racks')}>
+                <MapPin className="w-4 h-4 mr-1.5 text-amber-500" />Rack Locations ({allRacks.length})
+              </Button>
+            </>
+          )}
+          <Button variant="outline" size="sm" onClick={() => setUploadOpen(true)}><Upload className="w-4 h-4 mr-1.5" />Upload Excel</Button>
+          <Button size="sm" onClick={() => openDialog()}><Plus className="w-4 h-4 mr-1.5" />Add Product</Button>
         </div>
       </div>
 
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input placeholder="Search products..." className="pl-9" value={search} onChange={e => { setSearch(e.target.value); debouncedSearch(e.target.value); }} />
+      <div className="flex flex-wrap items-center gap-3 bg-card p-3 rounded-xl border border-border shadow-sm">
+        <div className="relative max-w-xs flex-1 min-w-[220px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input placeholder="Search medicine, salt, rack, company..." className="pl-9 h-9 text-xs" value={search} onChange={e => { setSearch(e.target.value); debouncedSearch(e.target.value); }} />
+        </div>
+
+        {allCompositions.length > 0 && (
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-semibold text-muted-foreground shrink-0">🧪 Formula:</span>
+            <Select value={selectedComposition} onValueChange={setSelectedComposition}>
+              <SelectTrigger className="h-9 text-xs w-[180px]">
+                <SelectValue placeholder="All Compositions" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Formulas ({allCompositions.length})</SelectItem>
+                {allCompositions.map((comp: any) => (
+                  <SelectItem key={comp} value={comp}>{comp}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        {allRacks.length > 0 && (
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-semibold text-muted-foreground shrink-0">📍 Rack Location:</span>
+            <Select value={selectedRack} onValueChange={setSelectedRack}>
+              <SelectTrigger className="h-9 text-xs w-[150px]">
+                <SelectValue placeholder="All Racks" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Racks ({allRacks.length})</SelectItem>
+                {allRacks.map((rack: any) => (
+                  <SelectItem key={rack} value={rack}>Rack {rack}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        {(selectedComposition !== 'all' || selectedRack !== 'all' || search) && (
+          <Button variant="ghost" size="sm" className="h-9 text-xs text-muted-foreground" onClick={() => { setSearch(''); setSelectedComposition('all'); setSelectedRack('all'); load(); }}>
+            Clear Filters
+          </Button>
+        )}
       </div>
+
+      {(selectedComposition !== 'all' || selectedRack !== 'all') && (
+        <div className="flex items-center gap-2 text-xs bg-primary/10 border border-primary/20 text-primary px-3 py-1.5 rounded-lg">
+          <span className="font-bold">Active Filter:</span>
+          {selectedComposition !== 'all' && <span className="bg-primary/20 px-2 py-0.5 rounded font-semibold">🧪 Formula: {selectedComposition}</span>}
+          {selectedRack !== 'all' && <span className="bg-primary/20 px-2 py-0.5 rounded font-semibold">📍 Rack: {selectedRack}</span>}
+          <span className="ml-auto text-muted-foreground font-medium">Showing {displayedProducts.length} medicines</span>
+        </div>
+      )}
 
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -140,7 +231,7 @@ function ProductsTab() {
         <Card><CardContent className="py-12 text-center text-muted-foreground">No products found.</CardContent></Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {products.map(p => (
+          {displayedProducts.map(p => (
             <Card key={p.id} className="hover:shadow-md transition-shadow">
               <CardContent className="p-5">
                 <div className="flex items-start justify-between mb-2">
@@ -149,8 +240,38 @@ function ProductsTab() {
                       <Package className="w-4 h-4 text-primary" />
                     </div>
                     <div>
-                      <h3 className="font-semibold text-sm">{p.productName}</h3>
+                      <div className="flex items-center gap-1.5">
+                        <h3 className="font-bold text-sm">{p.productName}</h3>
+                        {p.scheduleDrug && (
+                          <span className="text-[9px] bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300 font-bold px-1 rounded border border-red-300">Rx</span>
+                        )}
+                      </div>
                       <p className="text-[10px] text-muted-foreground">{p.manufacturer ? p.manufacturer + ' • ' : ''}{p.hsnSacCode ? 'HSN: ' + p.hsnSacCode : ''}{p.packSize ? ' • ' + p.packSize : ''}</p>
+                      
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {p.composition && (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setSelectedComposition(p.composition); }}
+                            className="inline-flex items-center gap-0.5 text-[10px] bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950 dark:hover:bg-blue-900 dark:text-blue-300 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-800 transition-colors font-medium"
+                            title="Click to view all medicines with this composition/formula"
+                          >
+                            <span>🧪</span>
+                            <span className="truncate max-w-[140px]">{p.composition}</span>
+                          </button>
+                        )}
+                        {p.rackLocation && (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setSelectedRack(p.rackLocation); }}
+                            className="inline-flex items-center gap-0.5 text-[10px] bg-amber-50 hover:bg-amber-100 text-amber-700 dark:bg-amber-950 dark:hover:bg-amber-900 dark:text-amber-300 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800 transition-colors font-bold"
+                            title="Click to view all medicines in this rack location"
+                          >
+                            <span>📍</span>
+                            <span>Rack {p.rackLocation}</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                   <div className="flex gap-1">
@@ -187,7 +308,7 @@ function ProductsTab() {
           <DialogHeader><DialogTitle>{editing ? 'Edit Product' : 'Add Product'}</DialogTitle></DialogHeader>
           <form onSubmit={handleSave} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
-              <div><Label>Product Name *</Label><Input name="productName" required defaultValue={editing?.productName} /></div>
+              <div><Label>Product Name *</Label><Input name="productName" required defaultValue={editing?.productName} placeholder="e.g. Dolo 650" /></div>
               <div>
                 <Label>Manufacturer</Label>
                 {manufacturers.length > 0 ? (
@@ -203,7 +324,7 @@ function ProductsTab() {
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <div><Label>HSN/SAC Code</Label><Input name="hsnSacCode" defaultValue={editing?.hsnSacCode} /></div>
+              <div><Label>HSN/SAC Code</Label><Input name="hsnSacCode" defaultValue={editing?.hsnSacCode} placeholder="e.g. 3004" /></div>
               <div><Label>Pack Size</Label><Input name="packSize" defaultValue={editing?.packSize} placeholder="e.g. 10 TAB, 100ML" /></div>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -221,8 +342,104 @@ function ProductsTab() {
                   <SelectContent>
                     <SelectItem value="Goods">Goods</SelectItem>
                     <SelectItem value="Services">Services</SelectItem>
+                    <SelectItem value="pharma">Pharma/Medicine</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+            </div>
+            
+            {/* Composition Field with Suggestions */}
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <Label className="text-blue-700 dark:text-blue-300 font-semibold flex items-center gap-1">
+                  🧪 Composition / Formula (Salt)
+                </Label>
+                <span className="text-[10px] text-muted-foreground">Salt composition</span>
+              </div>
+              <Input
+                name="composition"
+                list="compositions-datalist"
+                defaultValue={editing?.composition}
+                placeholder="e.g. Paracetamol 500mg + Aceclofenac 100mg"
+                className="bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800"
+              />
+              <datalist id="compositions-datalist">
+                {allCompositions.map((comp: any) => (
+                  <option key={comp} value={comp} />
+                ))}
+              </datalist>
+              {allCompositions.length > 0 && (
+                <div className="flex flex-wrap gap-1 pt-1">
+                  <span className="text-[10px] font-medium text-muted-foreground shrink-0">Quick Select:</span>
+                  {allCompositions.slice(0, 8).map((comp: any) => (
+                    <button
+                      key={comp}
+                      type="button"
+                      onClick={(e) => {
+                        const form = e.currentTarget.closest('form');
+                        if (form) {
+                          const inp = form.querySelector('[name="composition"]') as HTMLInputElement;
+                          if (inp) inp.value = comp;
+                        }
+                      }}
+                      className="text-[10px] bg-blue-100 hover:bg-blue-200 text-blue-800 dark:bg-blue-950 dark:hover:bg-blue-900 dark:text-blue-200 px-1.5 py-0.5 rounded border border-blue-300 dark:border-blue-700 transition-colors truncate max-w-[150px]"
+                      title={comp}
+                    >
+                      {comp}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Rack Location Field with Suggestions */}
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <Label className="text-amber-700 dark:text-amber-300 font-semibold flex items-center gap-1">
+                  📍 Product Rack / Bin Location
+                </Label>
+                <span className="text-[10px] text-muted-foreground">Shelf or rack number</span>
+              </div>
+              <Input
+                name="rackLocation"
+                list="racks-datalist"
+                defaultValue={editing?.rackLocation}
+                placeholder="e.g. Rack A-12, Shelf 3, Drawer B"
+                className="bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800"
+              />
+              <datalist id="racks-datalist">
+                {allRacks.map((rack: any) => (
+                  <option key={rack} value={rack} />
+                ))}
+              </datalist>
+              {allRacks.length > 0 && (
+                <div className="flex flex-wrap gap-1 pt-1">
+                  <span className="text-[10px] font-medium text-muted-foreground shrink-0">Existing Racks:</span>
+                  {allRacks.slice(0, 8).map((rack: any) => (
+                    <button
+                      key={rack}
+                      type="button"
+                      onClick={(e) => {
+                        const form = e.currentTarget.closest('form');
+                        if (form) {
+                          const inp = form.querySelector('[name="rackLocation"]') as HTMLInputElement;
+                          if (inp) inp.value = rack;
+                        }
+                      }}
+                      className="text-[10px] bg-amber-100 hover:bg-amber-200 text-amber-900 dark:bg-amber-950 dark:hover:bg-amber-900 dark:text-amber-200 px-1.5 py-0.5 rounded border border-amber-300 dark:border-amber-700 transition-colors font-bold"
+                    >
+                      Rack {rack}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 items-center">
+              <div><Label>Min Stock Level</Label><Input name="minStockLevel" type="number" defaultValue={editing?.minStockLevel} placeholder="Reorder level" /></div>
+              <div className="flex items-center space-x-2 mt-4">
+                <input type="checkbox" id="scheduleDrug" name="scheduleDrug" defaultChecked={editing?.scheduleDrug} className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary" />
+                <Label htmlFor="scheduleDrug">Schedule H/H1 Drug</Label>
               </div>
             </div>
             <div><Label>Description</Label><Textarea name="description" rows={2} defaultValue={editing?.description} /></div>
@@ -243,131 +460,314 @@ function ProductsTab() {
   );
 }
 
-function ExcelUploadDialog({ open, onOpenChange, onSuccess }: { open: boolean; onOpenChange: (v: boolean) => void; onSuccess: () => void }) {
+function CompositionsTab() {
+  const [products, setProducts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [selectedComp, setSelectedComp] = useState<string | null>(null);
+
+  useEffect(() => {
+    getProducts({ limit: 500 }).then(r => setProducts(r.products)).finally(() => setLoading(false));
+  }, []);
+
+  const compositionMap: Record<string, any[]> = {};
+  products.forEach(p => {
+    if (p.composition) {
+      const comp = p.composition.trim();
+      if (!compositionMap[comp]) compositionMap[comp] = [];
+      compositionMap[comp].push(p);
+    }
+  });
+
+  const compositions = Object.keys(compositionMap).filter(c =>
+    !search || c.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h2 className="text-xl font-bold flex items-center gap-2">
+            <FlaskConical className="w-5 h-5 text-blue-500" />
+            Medicine Compositions & Formula List
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {Object.keys(compositionMap).length} active drug formulas registered
+          </p>
+        </div>
+      </div>
+
+      <div className="relative max-w-md">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <Input
+          placeholder="Search formulas or salt names (e.g. Paracetamol)..."
+          className="pl-9"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+      </div>
+
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[1,2,3].map(i => <Skeleton key={i} className="h-32 rounded-xl" />)}
+        </div>
+      ) : compositions.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground space-y-2">
+            <FlaskConical className="w-8 h-8 text-muted-foreground mx-auto" />
+            <p className="font-semibold">No compositions found.</p>
+            <p className="text-xs">Add composition/salt details while creating or editing products.</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {compositions.map(comp => {
+            const list = compositionMap[comp];
+            const isSelected = selectedComp === comp;
+            return (
+              <Card key={comp} className={`hover:shadow-md transition-all border ${isSelected ? 'border-blue-500 ring-2 ring-blue-500/20' : ''}`}>
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <span className="text-[10px] bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 font-bold px-2 py-0.5 rounded border border-blue-200 dark:border-blue-800">
+                        🧪 Formula
+                      </span>
+                      <h3 className="font-bold text-sm text-foreground mt-1">{comp}</h3>
+                    </div>
+                    <span className="text-xs bg-muted px-2 py-1 rounded-full font-bold text-muted-foreground shrink-0">
+                      {list.length} {list.length === 1 ? 'Medicine' : 'Medicines'}
+                    </span>
+                  </div>
+
+                  <div className="space-y-1 pt-1">
+                    <p className="text-[10px] text-muted-foreground font-semibold">Medicines with this composition:</p>
+                    <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                      {list.map((m: any) => (
+                        <div key={m.id} className="text-[11px] bg-accent/50 px-2 py-1 rounded border border-border flex items-center gap-1.5">
+                          <span className="font-semibold">{m.productName}</span>
+                          {m.rackLocation && (
+                            <span className="text-[9px] bg-amber-100 dark:bg-amber-950 text-amber-900 dark:text-amber-200 px-1 rounded font-bold">
+                              📍 Rack {m.rackLocation}
+                            </span>
+                          )}
+                          <span className="text-[10px] text-muted-foreground">₹{m.unitPrice}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RacksTab() {
+  const [products, setProducts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+
+  useEffect(() => {
+    getProducts({ limit: 500 }).then(r => setProducts(r.products)).finally(() => setLoading(false));
+  }, []);
+
+  const rackMap: Record<string, any[]> = {};
+  products.forEach(p => {
+    if (p.rackLocation) {
+      const rack = p.rackLocation.trim();
+      if (!rackMap[rack]) rackMap[rack] = [];
+      rackMap[rack].push(p);
+    }
+  });
+
+  const racks = Object.keys(rackMap).filter(r =>
+    !search || r.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h2 className="text-xl font-bold flex items-center gap-2">
+            <MapPin className="w-5 h-5 text-amber-500" />
+            Product Rack & Bin Locations
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {Object.keys(rackMap).length} rack locations initialized
+          </p>
+        </div>
+      </div>
+
+      <div className="relative max-w-md">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <Input
+          placeholder="Search rack locations (e.g. A-12, Shelf 3)..."
+          className="pl-9"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+      </div>
+
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[1,2,3].map(i => <Skeleton key={i} className="h-32 rounded-xl" />)}
+        </div>
+      ) : racks.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground space-y-2">
+            <MapPin className="w-8 h-8 text-muted-foreground mx-auto" />
+            <p className="font-semibold">No rack locations assigned yet.</p>
+            <p className="text-xs">Add rack location details while creating or editing products.</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {racks.map(rack => {
+            const list = rackMap[rack];
+            return (
+              <Card key={rack} className="hover:shadow-md transition-all border border-amber-200/50 dark:border-amber-900/50">
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <span className="text-[10px] bg-amber-100 dark:bg-amber-950 text-amber-900 dark:text-amber-200 font-bold px-2 py-0.5 rounded border border-amber-300 dark:border-amber-700">
+                        📍 Location
+                      </span>
+                      <h3 className="font-bold text-base text-foreground mt-1">Rack {rack}</h3>
+                    </div>
+                    <span className="text-xs bg-muted px-2 py-1 rounded-full font-bold text-muted-foreground shrink-0">
+                      {list.length} {list.length === 1 ? 'Medicine' : 'Medicines'}
+                    </span>
+                  </div>
+
+                  <div className="space-y-1 pt-1">
+                    <p className="text-[10px] text-muted-foreground font-semibold">Stored items in this rack:</p>
+                    <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+                      {list.map((m: any) => (
+                        <div key={m.id} className="text-[11px] bg-accent/50 px-2 py-1 rounded border border-border flex items-center gap-1">
+                          <span className="font-bold">{m.productName}</span>
+                          {m.composition && (
+                            <span className="text-[9px] text-blue-600 dark:text-blue-400 font-medium truncate max-w-[100px]">
+                              🧪 {m.composition}
+                            </span>
+                          )}
+                          <span className="text-[10px] text-muted-foreground ml-auto">Stock: {m.stockQuantity || 0}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ExcelUploadDialog({ open, onOpenChange, onSuccess }: { open: boolean; onOpenChange: (open: boolean) => void; onSuccess: () => void }) {
   const [file, setFile] = useState<File | null>(null);
+  const [parsing, setParsing] = useState(false);
   const [parsedProducts, setParsedProducts] = useState<any[]>([]);
   const [parseErrors, setParseErrors] = useState<string[]>([]);
-  const [parsing, setParsing] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [result, setResult] = useState<{ created: number; errors: { row: number; message: string }[] } | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [result, setResult] = useState<{ created: number; errors: any[] } | null>(null);
 
   const reset = () => {
     setFile(null);
     setParsedProducts([]);
     setParseErrors([]);
     setResult(null);
-    setParsing(false);
+    setUploadProgress(0);
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    setFile(f);
-    setResult(null);
+    const selectedFile = e.target.files?.[0];
+    if (!selectedFile) return;
+
+    setFile(selectedFile);
+    setParsing(true);
     setParseErrors([]);
     setParsedProducts([]);
-    setParsing(true);
+    setResult(null);
 
     try {
-      // Upload file to cloud storage
-      const { fileUrl } = await uploadFile({ data: f, filename: f.name });
+      const buffer = await selectedFile.arrayBuffer();
+      const bytes = Array.from(new Uint8Array(buffer));
+      const res = await parseExcelProducts({ fileBuffer: bytes, fileName: selectedFile.name });
 
-      // Determine file type
-      const ext = f.name.toLowerCase().split('.').pop() || '';
-      const fileType = (ext === 'xlsx' || ext === 'xls') ? 'xlsx' as const : 'csv' as const;
-
-      // Send to backend for parsing
-      const res = await parseExcelProducts({ fileUrl, fileType });
       setParsedProducts(res.products);
-      setParseErrors(res.errors);
-    } catch {
-      setParseErrors(['Failed to parse the file. Please check the format and try again.']);
+      if (res.errors.length > 0) {
+        setParseErrors(res.errors);
+      }
+      toast.success(`Parsed ${res.products.length} products from Excel`);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to parse Excel file');
+      setFile(null);
+    } finally {
+      setParsing(false);
     }
-    setParsing(false);
   };
-
-  const [uploadProgress, setUploadProgress] = useState(0);
 
   const handleUpload = async () => {
     if (parsedProducts.length === 0) return;
-    setUploading(true);
-    setUploadProgress(0);
 
-    // Split into frontend chunks of 500 to avoid request size limits
-    const CHUNK = 500;
-    let totalCreated = 0;
-    const allErrors: { row: number; message: string }[] = [];
+    setUploading(true);
+    setUploadProgress(10);
 
     try {
-      for (let i = 0; i < parsedProducts.length; i += CHUNK) {
-        const chunk = parsedProducts.slice(i, i + CHUNK);
-        const res = await bulkUploadProducts({ products: chunk });
-        totalCreated += res.created;
-        allErrors.push(...res.errors);
-        setUploadProgress(Math.min(100, Math.round(((i + chunk.length) / parsedProducts.length) * 100)));
-      }
-      const finalResult = { created: totalCreated, errors: allErrors };
-      setResult(finalResult);
-      if (totalCreated > 0) {
-        toast.success(`${totalCreated} products uploaded successfully!`);
-        onSuccess();
-      }
-    } catch {
-      toast.error('Upload failed');
+      setUploadProgress(50);
+      const res = await bulkUploadProducts({ products: parsedProducts });
+      setUploadProgress(100);
+      setResult({ created: res.createdCount, errors: res.errors });
+      toast.success(`Successfully uploaded ${res.createdCount} products`);
+      onSuccess();
+    } catch (err: any) {
+      toast.error(err.message || 'Upload failed');
+    } finally {
+      setUploading(false);
     }
-    setUploading(false);
-  };
-
-  const downloadTemplate = () => {
-    const headers = ['Name of The Product', 'Item Code', 'Pack Size', 'COMPANY', 'M.R.P.', 'GST', 'Sale Price', 'Cl. Qnty.', 'Description'];
-    const sample = 'Paracetamol 500mg,3004,10 TAB,CIPLA,30,12,25.50,100,Paracetamol tablets';
-    const csv = headers.join(',') + '\n' + sample + '\n';
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'products_template.csv';
-    a.click();
-    URL.revokeObjectURL(url);
   };
 
   return (
-    <Dialog open={open} onOpenChange={v => { if (!v) { reset(); onOpenChange(false); } else { onOpenChange(true); } }}>
-      <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+    <Dialog open={open} onOpenChange={(val) => { if (!val) reset(); onOpenChange(val); }}>
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><FileSpreadsheet className="w-5 h-5" />Upload Products from Excel / CSV</DialogTitle>
+          <DialogTitle className="flex items-center gap-2 text-lg font-bold">
+            <FileSpreadsheet className="w-5 h-5 text-green-600" />
+            Bulk Import Products via Excel
+          </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* Download template */}
-          <div className="bg-muted/50 rounded-lg p-4 space-y-2">
-            <p className="text-sm font-medium">Step 1: Download the template (optional)</p>
-            <p className="text-xs text-muted-foreground">Download the CSV template, or use your own Excel (.xlsx) file with matching column headers.</p>
-            <Button variant="outline" size="sm" onClick={downloadTemplate}>
-              <Download className="w-4 h-4 mr-2" />Download Template
-            </Button>
+          <p className="text-xs text-muted-foreground">
+            Upload an Excel (.xlsx/.xls) or CSV file containing your inventory product list.
+          </p>
+
+          <div className="border-2 border-dashed border-border rounded-xl p-6 text-center space-y-2 hover:border-primary/50 transition-colors">
+            <FileSpreadsheet className="w-10 h-10 text-muted-foreground mx-auto" />
+            <div>
+              <label htmlFor="excel-file-input" className="cursor-pointer font-semibold text-primary hover:underline text-sm">
+                Click to browse
+              </label>
+              <span className="text-sm text-muted-foreground"> or drag & drop file here</span>
+            </div>
+            <p className="text-[11px] text-muted-foreground">Supports .xlsx, .xls, .csv</p>
+            <input id="excel-file-input" type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFileChange} />
+            {file && <p className="text-xs font-semibold text-primary pt-1">Selected: {file.name}</p>}
           </div>
 
-          {/* Upload file */}
-          <div className="space-y-2">
-            <p className="text-sm font-medium">Step 2: Upload your file</p>
-            <p className="text-xs text-muted-foreground">
-              Accepts <strong>.xlsx</strong> and <strong>.csv</strong> files. Required column: <strong>Name of The Product</strong> (or Product Name). 
-              Optional: Item Code, Pack Size, COMPANY, M.R.P., GST, Sale Price, Cl. Qnty., Description.
-              Blank fields will be saved as blank.
-            </p>
-            <Input type="file" accept=".xlsx,.xls,.csv,.txt" onChange={handleFileChange} />
-          </div>
-
-          {/* Parsing indicator */}
           {parsing && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+            <div className="flex items-center justify-center gap-2 py-4 text-xs text-muted-foreground">
               <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-              Reading file... (large files may take a few seconds)
+              Parsing Excel file...
             </div>
           )}
 
-          {/* Upload progress */}
           {uploading && uploadProgress > 0 && (
             <div className="space-y-1">
               <div className="flex justify-between text-xs text-muted-foreground">
@@ -380,7 +780,6 @@ function ExcelUploadDialog({ open, onOpenChange, onSuccess }: { open: boolean; o
             </div>
           )}
 
-          {/* Parse errors */}
           {parseErrors.length > 0 && (
             <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3 space-y-1">
               <p className="text-sm font-medium text-destructive flex items-center gap-1"><AlertCircle className="w-4 h-4" />Issues found</p>
@@ -389,7 +788,6 @@ function ExcelUploadDialog({ open, onOpenChange, onSuccess }: { open: boolean; o
             </div>
           )}
 
-          {/* Preview */}
           {parsedProducts.length > 0 && !result && (
             <div className="space-y-2">
               <p className="text-sm font-medium flex items-center gap-2">
@@ -403,6 +801,8 @@ function ExcelUploadDialog({ open, onOpenChange, onSuccess }: { open: boolean; o
                       <th className="px-3 py-2 text-left">#</th>
                       <th className="px-3 py-2 text-left">Product Name</th>
                       <th className="px-3 py-2 text-left">Company</th>
+                      <th className="px-3 py-2 text-left">Formula</th>
+                      <th className="px-3 py-2 text-left">Rack</th>
                       <th className="px-3 py-2 text-right">Rate</th>
                       <th className="px-3 py-2 text-right">MRP</th>
                       <th className="px-3 py-2 text-right">GST%</th>
@@ -413,8 +813,10 @@ function ExcelUploadDialog({ open, onOpenChange, onSuccess }: { open: boolean; o
                     {parsedProducts.slice(0, 20).map((p: any, i: number) => (
                       <tr key={i} className="border-t border-border">
                         <td className="px-3 py-1.5">{i + 1}</td>
-                        <td className="px-3 py-1.5">{p.productName}</td>
+                        <td className="px-3 py-1.5 font-semibold">{p.productName}</td>
                         <td className="px-3 py-1.5 text-muted-foreground">{p.manufacturer || ''}</td>
+                        <td className="px-3 py-1.5 text-blue-600 dark:text-blue-400">{p.composition || '-'}</td>
+                        <td className="px-3 py-1.5 text-amber-600 dark:text-amber-400 font-bold">{p.rackLocation || '-'}</td>
                         <td className="px-3 py-1.5 text-right">{p.unitPrice != null ? `₹${Number(p.unitPrice).toFixed(2)}` : ''}</td>
                         <td className="px-3 py-1.5 text-right">{p.mrp != null ? `₹${Number(p.mrp).toFixed(2)}` : ''}</td>
                         <td className="px-3 py-1.5 text-right">{p.gstPercentage != null ? `${p.gstPercentage}%` : ''}</td>
@@ -428,7 +830,6 @@ function ExcelUploadDialog({ open, onOpenChange, onSuccess }: { open: boolean; o
             </div>
           )}
 
-          {/* Result */}
           {result && (
             <div className="bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-900 rounded-lg p-4 space-y-2">
               <p className="text-sm font-semibold text-green-700 dark:text-green-400 flex items-center gap-2">
@@ -473,7 +874,7 @@ function ManufacturersTab() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
-  const debouncedSearch = useDebouncedCallback((val: string) => load(val), 400);
+  const debouncedSearch = useDebouncedCallback((val: string) => load(val), 300);
 
   const handleSave = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -507,8 +908,8 @@ function ManufacturersTab() {
     <>
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-bold">Manufacturers / Companies</h1>
-          <p className="text-sm text-muted-foreground">{manufacturers.length} manufacturers — manage product companies here</p>
+          <h1 className="text-2xl font-bold">Manufacturers</h1>
+          <p className="text-sm text-muted-foreground">{manufacturers.length} companies registered</p>
         </div>
         <Button onClick={() => { setEditing(null); setDialogOpen(true); }}><Plus className="w-4 h-4 mr-2" />Add Manufacturer</Button>
       </div>
@@ -520,32 +921,27 @@ function ManufacturersTab() {
 
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[1,2,3].map(i => <Skeleton key={i} className="h-24 rounded-xl" />)}
+          {[1,2,3].map(i => <Skeleton key={i} className="h-28 rounded-xl" />)}
         </div>
       ) : manufacturers.length === 0 ? (
-        <Card><CardContent className="py-12 text-center text-muted-foreground">
-          <Factory className="w-10 h-10 mx-auto mb-3 text-muted-foreground/50" />
-          <p>No manufacturers yet. Add pharmaceutical companies like CIPLA, SUN, etc.</p>
-        </CardContent></Card>
+        <Card><CardContent className="py-12 text-center text-muted-foreground">No manufacturers found.</CardContent></Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {manufacturers.map(m => (
             <Card key={m.id} className="hover:shadow-md transition-shadow">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                      <Factory className="w-4 h-4 text-primary" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-sm">{m.manufacturerName}</h3>
-                      {m.shortCode && <p className="text-[10px] text-muted-foreground font-mono">{m.shortCode}</p>}
-                    </div>
-                  </div>
-                  <div className="flex gap-1">
-                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditing(m); setDialogOpen(true); }}><Edit className="w-3.5 h-3.5" /></Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteId(m.id)}><Trash2 className="w-3.5 h-3.5" /></Button>
-                  </div>
+              <CardContent className="p-5 flex items-start justify-between">
+                <div>
+                  <h3 className="font-semibold text-sm flex items-center gap-2">
+                    {m.manufacturerName}
+                    {m.shortCode && <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-mono">{m.shortCode}</span>}
+                  </h3>
+                  {m.contactPerson && <p className="text-xs text-muted-foreground mt-1">Contact: {m.contactPerson}</p>}
+                  {m.phone && <p className="text-xs text-muted-foreground">Ph: {m.phone}</p>}
+                  {m.gstin && <p className="text-[10px] font-mono text-muted-foreground mt-1">GSTIN: {m.gstin}</p>}
+                </div>
+                <div className="flex gap-1">
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditing(m); setDialogOpen(true); }}><Edit className="w-3.5 h-3.5" /></Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteId(m.id)}><Trash2 className="w-3.5 h-3.5" /></Button>
                 </div>
               </CardContent>
             </Card>
@@ -557,8 +953,16 @@ function ManufacturersTab() {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>{editing ? 'Edit Manufacturer' : 'Add Manufacturer'}</DialogTitle></DialogHeader>
           <form onSubmit={handleSave} className="space-y-4">
-            <div><Label>Manufacturer Name *</Label><Input name="manufacturerName" required defaultValue={editing?.manufacturerName} placeholder="e.g. CIPLA, SUN PHARMA" /></div>
-            <div><Label>Short Code</Label><Input name="shortCode" defaultValue={editing?.shortCode} placeholder="e.g. CIP, SUN" /></div>
+            <div><Label>Company Name *</Label><Input name="manufacturerName" required defaultValue={editing?.manufacturerName} placeholder="e.g. Cipla Ltd." /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div><Label>Short Code</Label><Input name="shortCode" defaultValue={editing?.shortCode} placeholder="e.g. CPL" /></div>
+              <div><Label>GSTIN</Label><Input name="gstin" defaultValue={editing?.gstin} placeholder="27ABCDE1234F1ZH" /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div><Label>Contact Person</Label><Input name="contactPerson" defaultValue={editing?.contactPerson} /></div>
+              <div><Label>Phone</Label><Input name="phone" defaultValue={editing?.phone} /></div>
+            </div>
+            <div><Label>Email</Label><Input name="email" type="email" defaultValue={editing?.email} /></div>
             <DialogFooter><Button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save Manufacturer'}</Button></DialogFooter>
           </form>
         </DialogContent>

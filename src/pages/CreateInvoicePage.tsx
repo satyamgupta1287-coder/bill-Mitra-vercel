@@ -210,7 +210,7 @@ export default function CreateInvoicePage() {
       });
       (stockRes.products || []).forEach((p: any) => {
         if (!stockIds.has(p.id)) {
-          merged.push({ id: p.id, productName: p.productName, manufacturer: p.manufacturer, packSize: p.packSize, hsnSacCode: p.hsnSacCode, gstPercentage: p.gstPercentage, unitPrice: p.unitPrice, mrp: p.mrp, isProduct: true });
+          merged.push({ id: p.id, productName: p.productName, manufacturer: p.manufacturer, packSize: p.packSize, hsnSacCode: p.hsnSacCode, gstPercentage: p.gstPercentage, unitPrice: p.unitPrice, mrp: p.mrp, composition: p.composition, rackLocation: p.rackLocation, scheduleDrug: p.scheduleDrug, isProduct: true });
         }
       });
       setAllPickItems(merged);
@@ -240,7 +240,7 @@ export default function CreateInvoicePage() {
   );
 
   const filteredPick = allPickItems.filter(s =>
-    !productSearch || s.productName?.toLowerCase().includes(productSearch.toLowerCase()) || s.manufacturer?.toLowerCase().includes(productSearch.toLowerCase()) || s.batchNumber?.toLowerCase().includes(productSearch.toLowerCase())
+    !productSearch || s.productName?.toLowerCase().includes(productSearch.toLowerCase()) || s.manufacturer?.toLowerCase().includes(productSearch.toLowerCase()) || s.batchNumber?.toLowerCase().includes(productSearch.toLowerCase()) || s.composition?.toLowerCase().includes(productSearch.toLowerCase()) || s.rackLocation?.toLowerCase().includes(productSearch.toLowerCase())
   );
 
   const selectCustomer = (c: any) => {
@@ -464,31 +464,46 @@ export default function CreateInvoicePage() {
                           });
                         }, 200);
                       }}
-                      onKeyDown={e => {
+onKeyDown={e => {
                         if (e.key === 'Enter') {
                           e.preventDefault();
                           if (isActive && filteredPick.length > 0) selectPickItem(i, filteredPick[selectedDropdownIndex] || filteredPick[0]);
-                          else if (item.itemName) goToNextRow(i);
+                          else if (item.itemName) {
+                            const rowInputs = Array.from(document.querySelectorAll(`input[data-row="${i}"]`));
+                            const currentIndex = rowInputs.indexOf(e.currentTarget as HTMLInputElement);
+                            if (currentIndex >= 0 && currentIndex < rowInputs.length - 1) {
+                              const nextInput = rowInputs[currentIndex + 1] as HTMLInputElement;
+                              nextInput.focus();
+                              nextInput.select();
+                            } else goToNextRow(i);
+                          }
                         } else if (e.key === 'Escape') {
                           setActiveProductRow(null);
                         } else if (e.key === 'ArrowDown') {
                           e.preventDefault();
-                          setSelectedDropdownIndex(prev => Math.min(prev + 1, filteredPick.slice(0, 50).length - 1));
-                          // Scroll into view hack
-                          setTimeout(() => { document.getElementById('dropdown-item-' + (selectedDropdownIndex + 1))?.scrollIntoView({ block: 'nearest' }); }, 0);
+                          setSelectedDropdownIndex(prev => {
+                            const next = Math.min(prev + 1, filteredPick.slice(0, 50).length - 1);
+                            document.getElementById(`dropdown-item-${next}`)?.scrollIntoView({ block: 'nearest' });
+                            return next;
+                          });
                         } else if (e.key === 'ArrowUp') {
                           e.preventDefault();
-                          setSelectedDropdownIndex(prev => Math.max(prev - 1, 0));
-                          setTimeout(() => { document.getElementById('dropdown-item-' + Math.max(selectedDropdownIndex - 1, 0))?.scrollIntoView({ block: 'nearest' }); }, 0);
+                          setSelectedDropdownIndex(prev => {
+                            const next = Math.max(prev - 1, 0);
+                            document.getElementById(`dropdown-item-${next}`)?.scrollIntoView({ block: 'nearest' });
+                            return next;
+                          });
                         }
                       }}
                     />
                     {isActive && filteredPick.length > 0 && (
                       <ProductDropdown
                         filteredPick={filteredPick}
+                        allPickItems={allPickItems}
                         onSelect={(s) => selectPickItem(i, s)}
                         category={category}
                         selectedIndex={selectedDropdownIndex}
+                        setProductSearch={setProductSearch}
                       />
                     )}
                   </td>
@@ -547,42 +562,134 @@ export default function CreateInvoicePage() {
   );
 }
 
-// ─── Product Dropdown ───
+// ─── ValueSoft Style Product Selection Dropdown ───
 function ProductDropdown({ filteredPick, onSelect, category, selectedIndex = 0 }: { filteredPick: StockItem[]; onSelect: (s: StockItem) => void; category: TemplateCategory; selectedIndex?: number }) {
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const activeIdx = hoveredIdx !== null ? hoveredIdx : selectedIndex;
+  const activeItem = filteredPick[activeIdx] || filteredPick[0];
   const showBatch = category === 'pharma' || category === 'electronics';
+
   return (
-    <div className="fixed md:absolute z-50 md:top-full left-0 right-0 md:right-auto bottom-0 md:bottom-auto md:left-0 md:w-[550px] md:mt-0.5 bg-card border border-border rounded-t-xl md:rounded shadow-xl max-h-[40vh] md:max-h-52 overflow-y-auto">
-      <table className="w-full text-[10px]">
-        <thead className="bg-primary text-primary-foreground sticky top-0">
-          <tr>
-            <th className="text-left px-1.5 py-1">Product</th>
-            <th className="text-left px-1.5 py-1 w-12">Pack</th>
-            {showBatch && <th className="text-left px-1.5 py-1 w-16">{category === 'electronics' ? 'Serial' : 'Batch'}</th>}
-            <th className="text-left px-1.5 py-1 w-16">Mfr</th>
-            <th className="text-right px-1.5 py-1 w-14">MRP</th>
-            <th className="text-right px-1.5 py-1 w-12">Stock</th>
-          </tr>
-        </thead>
-        <tbody>
-          {filteredPick.slice(0, 50).map((s, idx) => (
-            <tr key={`${s.id}-${s.batchNumber || 'p'}`}
-              id={`dropdown-item-${idx}`}
-              className={`cursor-pointer hover:bg-primary/10 ${idx === selectedIndex ? 'bg-primary/20 ring-1 ring-inset ring-primary/50' : idx % 2 === 0 ? 'bg-accent/30' : ''}`}
-              onMouseDown={e => { e.preventDefault(); onSelect(s); }}>
-              <td className="px-1.5 py-0.5 font-semibold">{s.productName}</td>
-              <td className="px-1.5 py-0.5 text-muted-foreground">{s.packSize || '-'}</td>
-              {showBatch && <td className="px-1.5 py-0.5 font-mono text-muted-foreground">{s.batchNumber || '-'}</td>}
-              <td className="px-1.5 py-0.5 text-muted-foreground truncate">{s.manufacturer || '-'}</td>
-              <td className="px-1.5 py-0.5 text-right font-mono">{s.mrp ? s.mrp.toFixed(2) : '-'}</td>
-              <td className={`px-1.5 py-0.5 text-right font-bold ${s.isProduct ? 'text-muted-foreground' : 'text-primary'}`}>{s.isProduct ? '∞' : (s.currentStock ?? 0)}</td>
+    <div className="fixed md:absolute z-50 md:top-full left-0 right-0 md:right-auto bottom-0 md:bottom-auto md:left-0 w-full md:w-[720px] md:mt-0.5 bg-card border-2 border-primary/50 rounded-lg shadow-2xl overflow-hidden flex flex-col max-h-[75vh] md:max-h-[480px]">
+      {/* Top Header Bar */}
+      <div className="bg-primary px-3 py-1.5 text-primary-foreground flex items-center justify-between text-xs font-bold shrink-0">
+        <div className="flex items-center gap-2">
+          <span>📦 All Products ({filteredPick.length})</span>
+        </div>
+        <span className="text-[10px] opacity-90 font-normal hidden sm:inline">Use ↑↓ keys to highlight, ENTER to select</span>
+      </div>
+
+      {/* Table List Container */}
+      <div className="overflow-y-auto flex-1 bg-card">
+        <table className="w-full text-[11px] text-left border-collapse">
+          <thead className="bg-muted/80 text-muted-foreground sticky top-0 z-10 border-b border-border font-bold">
+            <tr>
+              <th className="px-2 py-1.5">Product Name</th>
+              <th className="px-2 py-1.5 w-16">Pack</th>
+              {showBatch && <th className="px-2 py-1.5 w-24">{category === 'electronics' ? 'Serial' : 'Batch'}</th>}
+              {category === 'pharma' && <th className="px-2 py-1.5 w-20">Location</th>}
+              <th className="px-2 py-1.5 w-24">Company</th>
+              <th className="px-2 py-1.5 w-20 text-right">MRP</th>
+              <th className="px-2 py-1.5 w-16 text-right">Stock</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-      {filteredPick.length > 50 && (
-        <p className="text-[10px] text-muted-foreground text-center py-1">
-          Showing 50 of {filteredPick.length} — type more to narrow search
-        </p>
+          </thead>
+          <tbody>
+            {filteredPick.slice(0, 50).map((s, idx) => {
+              const isSelected = idx === activeIdx;
+              return (
+                <tr
+                  key={`${s.id}-${s.batchNumber || 'p'}`}
+                  id={`dropdown-item-${idx}`}
+                  className={`cursor-pointer transition-colors border-b border-border/30 ${
+                    isSelected
+                      ? 'bg-blue-600 text-white dark:bg-cyan-600 font-bold'
+                      : idx % 2 === 0 ? 'bg-accent/20 hover:bg-primary/10' : 'bg-card hover:bg-primary/10'
+                  }`}
+                  onMouseEnter={() => setHoveredIdx(idx)}
+                  onMouseLeave={() => setHoveredIdx(null)}
+                  onMouseDown={e => { e.preventDefault(); onSelect(s); }}
+                >
+                  <td className="px-2 py-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-bold">{s.productName}</span>
+                      {s.scheduleDrug && (
+                        <span className={`text-[8px] px-1 rounded font-black border ${isSelected ? 'bg-red-500 text-white border-white' : 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300 border-red-300'}`}>
+                          Rx
+                        </span>
+                      )}
+                    </div>
+                    {s.composition && (
+                      <div className={`text-[9px] truncate max-w-[220px] font-normal ${isSelected ? 'text-cyan-100' : 'text-muted-foreground'}`}>
+                        {s.composition}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-2 py-1">{s.packSize || '-'}</td>
+                  {showBatch && (
+                    <td className="px-2 py-1 font-mono">
+                      <div>{s.batchNumber || '-'}</div>
+                      {s.expiryDate && (
+                        <div className={`text-[9px] ${isSelected ? 'text-amber-200' : 'text-muted-foreground'}`}>
+                          Exp: {s.expiryDate}
+                        </div>
+                      )}
+                    </td>
+                  )}
+                  {category === 'pharma' && (
+                    <td className="px-2 py-1 text-[10px]">
+                      {s.rackLocation ? <span className={`px-1.5 py-0.5 rounded ${isSelected ? 'bg-blue-700 text-white' : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'}`}>📍 {s.rackLocation}</span> : '-'}
+                    </td>
+                  )}
+                  <td className="px-2 py-1 truncate">{s.manufacturer || '-'}</td>
+                  <td className="px-2 py-1 text-right font-mono">
+                    {s.mrp ? `₹${s.mrp.toFixed(2)}` : '-'}
+                  </td>
+                  <td className={`px-2 py-1 text-right font-extrabold ${isSelected ? 'text-yellow-200' : s.isProduct ? 'text-muted-foreground' : 'text-primary'}`}>
+                    {s.isProduct ? '∞' : (s.currentStock ?? 0)}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {filteredPick.length > 50 && (
+          <p className="text-[10px] text-muted-foreground text-center py-1">
+            Showing 50 of {filteredPick.length} items — type more to refine
+          </p>
+        )}
+      </div>
+
+      {/* ValueSoft-style Live Product Details Footer Bar */}
+      {activeItem && (
+        <div className="bg-slate-900 text-slate-100 p-2.5 border-t-2 border-primary/60 text-[11px] shrink-0 shadow-inner">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+            <div className="flex items-center gap-2">
+              <span className="bg-cyan-500/20 text-cyan-300 font-black px-1.5 py-0.5 rounded text-[9px] uppercase border border-cyan-500/40 tracking-wider">
+                SELECTED ITEM
+              </span>
+              <span className="font-extrabold text-xs text-white tracking-wide">{activeItem.productName}</span>
+              {activeItem.scheduleDrug && (
+                <span className="bg-red-500 text-white font-bold text-[9px] px-1 rounded">Rx (Schedule H)</span>
+              )}
+            </div>
+            <div className="flex items-center gap-3 font-mono text-[11px]">
+              <span>MRP: <strong className="text-emerald-400 text-xs">₹{activeItem.mrp ? activeItem.mrp.toFixed(2) : '0.00'}</strong></span>
+              <span>Stock: <strong className={`text-xs ${activeItem.currentStock && activeItem.currentStock < 10 ? 'text-amber-400 font-black' : 'text-cyan-300 font-extrabold'}`}>{activeItem.isProduct ? '∞ Unlimited' : (activeItem.currentStock ?? 0)}</strong></span>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px] pt-1 border-t border-slate-800 text-slate-300">
+            <div><span className="text-slate-400 font-semibold">Pack:</span> <span className="font-medium text-white">{activeItem.packSize || '1x1'}</span></div>
+            <div><span className="text-slate-400 font-semibold">Batch:</span> <span className="font-mono text-cyan-300 font-bold">{activeItem.batchNumber || 'N/A'}</span></div>
+            <div><span className="text-slate-400 font-semibold">Expiry:</span> <span className={`font-mono font-bold ${activeItem.expiryDate && new Date(activeItem.expiryDate) < new Date() ? 'text-red-400 font-black' : 'text-emerald-300'}`}>{activeItem.expiryDate || 'N/A'}</span></div>
+            <div><span className="text-slate-400 font-semibold">Company:</span> <span className="font-medium text-white">{activeItem.manufacturer || 'N/A'}</span></div>
+          </div>
+          {(activeItem.composition || activeItem.rackLocation) && (
+            <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] bg-slate-950/80 px-2 py-1 rounded border border-slate-800 mt-1">
+              {activeItem.composition && <span className="text-cyan-300"><strong className="text-slate-400">Salt Formula:</strong> {activeItem.composition}</span>}
+              {activeItem.rackLocation && <span className="text-amber-300 font-bold ml-auto"><strong className="text-slate-400">Rack Location:</strong> 📍 {activeItem.rackLocation}</span>}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
@@ -737,7 +844,20 @@ function CellInput({ row, field, value, onChange, type = 'text', align, mono, bo
         className={`h-6 text-[11px] border-0 bg-transparent px-1 focus-visible:ring-1 focus-visible:ring-primary ${align === 'right' ? 'text-right' : ''} ${mono ? 'font-mono' : ''} ${bold ? 'font-bold' : ''}`}
         type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
         min={type === 'number' ? 0 : undefined} step={type === 'number' ? 'any' : undefined}
-        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onEnter?.(); } }}
+onKeyDown={e => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            const rowInputs = Array.from(document.querySelectorAll(`input[data-row="${row}"]`));
+            const currentIndex = rowInputs.indexOf(e.currentTarget as HTMLInputElement);
+            if (currentIndex >= 0 && currentIndex < rowInputs.length - 1) {
+              const nextInput = rowInputs[currentIndex + 1] as HTMLInputElement;
+              nextInput.focus();
+              nextInput.select();
+            } else {
+              onEnter?.();
+            }
+          }
+        }}
       />
     </td>
   );

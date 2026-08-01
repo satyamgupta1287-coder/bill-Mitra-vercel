@@ -46,6 +46,9 @@ export default createEndpoint({
         hsnSacCode: prod?.hsnSacCode || '',
         gstPercentage: prod?.gstPercentage || r.gstPercentage || 0,
         unitPrice: prod?.unitPrice || r.purchaseRate || 0,
+        composition: prod?.composition || '',
+        rackLocation: prod?.rackLocation || '',
+        scheduleDrug: prod?.scheduleDrug || false,
       };
     });
 
@@ -59,6 +62,9 @@ export default createEndpoint({
       mrp: p.mrp || 0,
       gstPercentage: p.gstPercentage || 0,
       unit: p.unit || '',
+      composition: p.composition || '',
+      rackLocation: p.rackLocation || '',
+      scheduleDrug: p.scheduleDrug || false,
     }));
 
     return { stock, products };

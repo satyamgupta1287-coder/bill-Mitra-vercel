@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { KeyRound, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 
-export default function ActivateLicensePage({ onActivated }: { onActivated: () => void }) {
+export default function ActivateLicensePage({ onActivated, onAdminBypass }: { onActivated: () => void, onAdminBypass?: () => void }) {
   const { user, logout } = useAuth();
   const [key, setKey] = useState('');
   const [loading, setLoading] = useState(false);
@@ -80,6 +80,11 @@ export default function ActivateLicensePage({ onActivated }: { onActivated: () =
           Logged in as {user?.email} ·{' '}
           <button onClick={() => logout()} className="underline hover:text-foreground transition-colors">Sign out</button>
         </p>
+        {user?.role === 'Admin' && onAdminBypass && (
+          <Button variant="link" className="text-xs text-muted-foreground w-full" onClick={onAdminBypass}>
+            Admin: Bypass to generate licenses
+          </Button>
+        )}
       </div>
     </div>
   );

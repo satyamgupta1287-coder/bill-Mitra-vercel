@@ -145,6 +145,8 @@ export const Products = new FirestoreTable('products');
 export const Purchases = new FirestoreTable('purchases');
 export const Suppliers = new FirestoreTable('suppliers');
 export const UserSettings = new FirestoreTable('user_settings');
+export const Compositions = new FirestoreTable('compositions');
+export const Locations = new FirestoreTable('locations');
 
 export const ZitePdf = {
   renderHtml: async ({ html }: any) => {

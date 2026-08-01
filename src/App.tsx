@@ -18,6 +18,8 @@ import ReportsPage from './pages/ReportsPage';
 import LicensesPage from './pages/LicensesPage';
 import InvoiceTemplatesPage from './pages/InvoiceTemplatesPage';
 import ActivateLicensePage from './pages/ActivateLicensePage';
+import CompositionsPage from './pages/CompositionsPage';
+import LocationsPage from './pages/LocationsPage';
 import { Toaster } from '@/components/ui/sonner';
 
 function AuthGate({ children }: { children: React.ReactNode }) {
@@ -167,13 +169,10 @@ function LicenseGate({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [licenseStatus, setLicenseStatus] = useState<'loading' | 'valid' | 'invalid'>('loading');
 
+  const [adminBypass, setAdminBypass] = useState(false);
+
   const doCheck = () => {
     if (!user) return;
-    // Admin users bypass license check entirely
-    if (user.role === 'Admin') {
-      setLicenseStatus('valid');
-      return;
-    }
     setLicenseStatus('loading');
     checkLicense({}).then(res => {
       setLicenseStatus(res.hasValidLicense ? 'valid' : 'invalid');
@@ -195,8 +194,8 @@ function LicenseGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (licenseStatus === 'invalid') {
-    return <ActivateLicensePage onActivated={doCheck} />;
+  if (licenseStatus === 'invalid' && !adminBypass) {
+    return <ActivateLicensePage onActivated={doCheck} onAdminBypass={() => setAdminBypass(true)} />;
   }
 
   return <>{children}</>;
@@ -245,6 +244,8 @@ export default function App() {
                 <Route path="/customers" element={<CustomersPage />} />
                 <Route path="/suppliers" element={<SuppliersPage />} />
                 <Route path="/products" element={<ProductsPage />} />
+                <Route path="/compositions" element={<CompositionsPage />} />
+                <Route path="/locations" element={<LocationsPage />} />
                 <Route path="/invoices" element={<InvoicesPage />} />
                 <Route path="/invoices/new" element={<CreateInvoicePage />} />
                 <Route path="/invoices/:id/edit" element={<CreateInvoicePage />} />

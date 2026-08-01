@@ -10,6 +10,7 @@
     "start": "node dist/server.cjs"
   },
   "dependencies": {
+    "@google/genai": "^2.15.0",
     "@radix-ui/react-alert-dialog": "^1.1.23",
     "@radix-ui/react-dialog": "^1.1.23",
     "@radix-ui/react-label": "^2.1.15",

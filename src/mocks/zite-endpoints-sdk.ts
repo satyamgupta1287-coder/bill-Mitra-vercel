@@ -97,6 +97,24 @@ export const saveUserSettings = wrap(saveUserSettingsDef);
 import updateLicenseStatusDef from '../api/updateLicenseStatus';
 export const updateLicenseStatus = wrap(updateLicenseStatusDef);
 
+import getCompositionsDef from '../api/getCompositions';
+export const getCompositions = wrap(getCompositionsDef);
+import saveCompositionDef from '../api/saveComposition';
+export const saveComposition = wrap(saveCompositionDef);
+import deleteCompositionDef from '../api/deleteComposition';
+export const deleteComposition = wrap(deleteCompositionDef);
+import linkCompositionProductsDef from '../api/linkCompositionProducts';
+export const linkCompositionProducts = wrap(linkCompositionProductsDef);
+
+import getLocationsDef from '../api/getLocations';
+export const getLocations = wrap(getLocationsDef);
+import saveLocationDef from '../api/saveLocation';
+export const saveLocation = wrap(saveLocationDef);
+import deleteLocationDef from '../api/deleteLocation';
+export const deleteLocation = wrap(deleteLocationDef);
+import linkLocationProductsDef from '../api/linkLocationProducts';
+export const linkLocationProducts = wrap(linkLocationProductsDef);
+
 export type GetDashboardOutputType = any;
 export type GetUserSettingsOutputType = any;
 export type GetLicensesOutputType = any;

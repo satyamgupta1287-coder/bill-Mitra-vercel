@@ -16,11 +16,6 @@ export default createEndpoint({
     }).nullable(),
   }),
   execute: async ({ context }) => {
-    // Admin users always bypass license check
-    if (context.user.role === 'Admin') {
-      return { hasValidLicense: true, license: null };
-    }
-
     // Find active license assigned to this user
     const { records } = await Licenses.findAll({
       filters: {

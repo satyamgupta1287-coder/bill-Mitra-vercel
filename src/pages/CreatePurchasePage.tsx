@@ -4,7 +4,7 @@ import { getSuppliers, getProducts, saveBulkPurchase } from 'zite-endpoints-sdk'
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
-import { ArrowLeft, Search, X, Save } from 'lucide-react';
+import { ArrowLeft, Search, X, Save, Upload, Sparkles, Loader2 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 
 type LineItem = {
@@ -46,6 +46,8 @@ export default function CreatePurchasePage() {
   const [supplierId, setSupplierId] = useState('');
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState('');
   const [items, setItems] = useState<LineItem[]>([emptyItem()]);
+  const [parsingAI, setParsingAI] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Search states
   const [supplierSearch, setSupplierSearch] = useState('');
@@ -53,6 +55,7 @@ export default function CreatePurchasePage() {
   const supplierRef = useRef<HTMLDivElement>(null);
   const [activeProductRow, setActiveProductRow] = useState<number | null>(null);
   const [productSearch, setProductSearch] = useState('');
+  const [selectedDropdownIndex, setSelectedDropdownIndex] = useState(0);
   const justSelectedRef = useRef(false);
 
   useEffect(() => {
@@ -81,8 +84,15 @@ export default function CreatePurchasePage() {
   );
 
   const filteredProducts = allProducts.filter(p =>
-    !productSearch || p.productName?.toLowerCase().includes(productSearch.toLowerCase()) || p.manufacturer?.toLowerCase().includes(productSearch.toLowerCase())
+    !productSearch ||
+    p.productName?.toLowerCase().includes(productSearch.toLowerCase()) ||
+    p.manufacturer?.toLowerCase().includes(productSearch.toLowerCase()) ||
+    p.composition?.toLowerCase().includes(productSearch.toLowerCase()) ||
+    p.rackLocation?.toLowerCase().includes(productSearch.toLowerCase())
   );
+
+  const availableRacks = Array.from(new Set(allProducts.map(p => p.rackLocation).filter(Boolean)));
+  const availableCompositions = Array.from(new Set(allProducts.map(p => p.composition).filter(Boolean)));
 
   const selectSupplier = (s: any) => {
     setSupplierId(s.id);
@@ -133,6 +143,99 @@ export default function CreatePurchasePage() {
   const removeItem = (i: number) => {
     if (items.length <= 1) return;
     setItems(items.filter((_, idx) => idx !== i));
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setParsingAI(true);
+    toast.info('Analyzing invoice with AI...', { id: 'ai-parse' });
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async (evt) => {
+        const base64Data = (evt.target?.result as string).split(',')[1];
+        if (!base64Data) {
+          toast.error('Failed to read image', { id: 'ai-parse' });
+          setParsingAI(false);
+          return;
+        }
+
+        try {
+          const res = await fetch('/api/parse-invoice', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ imageBase64: base64Data }),
+          });
+
+          if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.error || 'Failed to parse invoice');
+          }
+
+          const data = await res.json();
+          
+          if (data.supplierName) {
+            // Try to match supplier
+            const matched = suppliers.find(s => s.supplierName.toLowerCase().includes(data.supplierName.toLowerCase()));
+            if (matched) {
+              setSupplierId(matched.id);
+            } else {
+              setSupplierSearch(data.supplierName);
+              setShowSupplierList(true);
+            }
+          }
+
+          if (data.invoiceNumber) setSupplierInvoiceNumber(data.invoiceNumber);
+          if (data.purchaseDate) {
+            const date = new Date(data.purchaseDate);
+            if (!isNaN(date.getTime())) setPurchaseDate(date.toISOString().split('T')[0]);
+          }
+
+          if (data.items && Array.isArray(data.items) && data.items.length > 0) {
+            const newItems: LineItem[] = data.items.map((aiItem: any) => {
+              // Try to find matching product
+              let matchedProd = allProducts.find(p => p.productName.toLowerCase() === aiItem.itemName?.toLowerCase());
+              
+              if (!matchedProd) {
+                 // Try partial match
+                 matchedProd = allProducts.find(p => aiItem.itemName && p.productName.toLowerCase().includes(aiItem.itemName.toLowerCase()));
+              }
+
+              return {
+                itemName: aiItem.itemName || '',
+                productId: matchedProd?.id,
+                hsnSacCode: aiItem.hsnSacCode || matchedProd?.hsnSacCode || '',
+                quantity: Number(aiItem.quantity) || 1,
+                freeQuantity: Number(aiItem.freeQuantity) || 0,
+                purchaseRate: Number(aiItem.purchaseRate) || matchedProd?.unitPrice || 0,
+                mrp: Number(aiItem.mrp) || matchedProd?.mrp || 0,
+                gstPercentage: Number(aiItem.gstPercentage) || matchedProd?.gstPercentage || 12,
+                batchNumber: aiItem.batchNumber || '',
+                expiryDate: aiItem.expiryDate || '',
+                manufacturer: aiItem.manufacturer || matchedProd?.manufacturer || '',
+                packSize: aiItem.packSize || matchedProd?.packSize || '',
+              };
+            });
+            newItems.push(emptyItem());
+            setItems(newItems);
+            toast.success('Invoice data populated successfully!', { id: 'ai-parse' });
+          } else {
+            toast.warning('Parsed invoice but found no items.', { id: 'ai-parse' });
+          }
+        } catch (error: any) {
+          toast.error(error.message || 'Error processing invoice', { id: 'ai-parse' });
+        } finally {
+          setParsingAI(false);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (err: any) {
+      toast.error('Failed to parse image', { id: 'ai-parse' });
+      setParsingAI(false);
+    }
   };
 
   // Calculations
@@ -244,6 +347,19 @@ export default function CreatePurchasePage() {
               </div>
             </>)}
           </div>
+          <div className="flex items-center justify-end">
+            <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleImageUpload} />
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 bg-indigo-50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/50"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={parsingAI}
+            >
+              {parsingAI ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+              {parsingAI ? 'Analyzing...' : 'AI Magic Scan'}
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -285,7 +401,7 @@ export default function CreatePurchasePage() {
                       className="h-6 text-[11px] font-semibold border-0 bg-transparent px-1 focus-visible:ring-1 focus-visible:ring-primary"
                       value={isActive ? productSearch : item.itemName}
                       placeholder="Type product..."
-                      onChange={e => { setProductSearch(e.target.value); if (!isActive) setActiveProductRow(i); }}
+                      onChange={e => { setProductSearch(e.target.value); setSelectedDropdownIndex(0); if (!isActive) setActiveProductRow(i); }}
                       onFocus={() => {
                         if (justSelectedRef.current) { justSelectedRef.current = false; return; }
                         setActiveProductRow(i);
@@ -302,45 +418,165 @@ export default function CreatePurchasePage() {
                           });
                         }, 200);
                       }}
-                      onKeyDown={e => {
+onKeyDown={e => {
                         if (e.key === 'Enter') {
                           e.preventDefault();
                           if (isActive && filteredProducts.length > 0) {
-                            selectProduct(i, filteredProducts[0]);
+                            selectProduct(i, filteredProducts[selectedDropdownIndex] || filteredProducts[0]);
                           } else if (item.itemName) {
-                            goToNextRow(i);
+                            const rowInputs = Array.from(document.querySelectorAll(`input[data-row="${i}"]`));
+                            const currentIndex = rowInputs.indexOf(e.currentTarget as HTMLInputElement);
+                            if (currentIndex >= 0 && currentIndex < rowInputs.length - 1) {
+                              const nextInput = rowInputs[currentIndex + 1] as HTMLInputElement;
+                              nextInput.focus();
+                              nextInput.select();
+                            } else goToNextRow(i);
                           }
                         } else if (e.key === 'Escape') {
                           setActiveProductRow(null);
+                        } else if (e.key === 'ArrowDown') {
+                          e.preventDefault();
+                          setSelectedDropdownIndex(prev => {
+                            const next = Math.min(prev + 1, filteredProducts.slice(0, 50).length - 1);
+                            document.getElementById(`purchase-dropdown-item-${next}`)?.scrollIntoView({ block: 'nearest' });
+                            return next;
+                          });
+                        } else if (e.key === 'ArrowUp') {
+                          e.preventDefault();
+                          setSelectedDropdownIndex(prev => {
+                            const next = Math.max(prev - 1, 0);
+                            document.getElementById(`purchase-dropdown-item-${next}`)?.scrollIntoView({ block: 'nearest' });
+                            return next;
+                          });
                         }
                       }}
                     />
                     {isActive && filteredProducts.length > 0 && (
-                      <div className="fixed md:absolute z-50 md:top-full left-0 right-0 md:right-auto bottom-0 md:bottom-auto md:left-0 md:w-[500px] md:mt-0.5 bg-card border border-border rounded-t-xl md:rounded shadow-xl max-h-[40vh] md:max-h-52 overflow-y-auto">
-                        <table className="w-full text-[10px]">
-                          <thead className="bg-primary text-primary-foreground sticky top-0">
-                            <tr>
-                              <th className="text-left px-1.5 py-1">Product</th>
-                              <th className="text-left px-1.5 py-1 w-12">Pack</th>
-                              <th className="text-left px-1.5 py-1 w-16">Mfr</th>
-                              <th className="text-right px-1.5 py-1 w-14">MRP</th>
-                              <th className="text-right px-1.5 py-1 w-14">Rate</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {filteredProducts.map((p, idx) => (
-                              <tr key={p.id}
-                                className={`cursor-pointer hover:bg-primary/10 ${idx === 0 ? 'bg-primary/5 ring-1 ring-inset ring-primary/30' : idx % 2 === 0 ? 'bg-accent/30' : ''}`}
-                                onMouseDown={e => { e.preventDefault(); selectProduct(i, p); }}>
-                                <td className="px-1.5 py-0.5 font-semibold">{p.productName}</td>
-                                <td className="px-1.5 py-0.5 text-muted-foreground">{p.packSize || '-'}</td>
-                                <td className="px-1.5 py-0.5 text-muted-foreground truncate">{p.manufacturer || '-'}</td>
-                                <td className="px-1.5 py-0.5 text-right font-mono">{p.mrp ? p.mrp.toFixed(2) : '-'}</td>
-                                <td className="px-1.5 py-0.5 text-right font-mono">{p.unitPrice ? p.unitPrice.toFixed(2) : '-'}</td>
+                      <div className="fixed md:absolute z-50 md:top-full left-0 right-0 md:right-auto bottom-0 md:bottom-auto md:left-0 w-full md:w-[720px] md:mt-0.5 bg-card border-2 border-primary/50 rounded-lg shadow-2xl overflow-hidden flex flex-col max-h-[75vh] md:max-h-[480px]">
+                        {(availableRacks.length > 0 || availableCompositions.length > 0) && (
+                          <div className="p-2 bg-muted/90 border-b border-border space-y-1.5 text-[10px] sticky top-0 z-20 shrink-0">
+                            {availableRacks.length > 0 && (
+                              <div className="flex items-center gap-1 overflow-x-auto pb-0.5 scrollbar-none">
+                                <span className="font-bold text-amber-600 dark:text-amber-400 shrink-0">📍 Quick Rack:</span>
+                                {availableRacks.slice(0, 8).map(rack => (
+                                  <button
+                                    key={rack}
+                                    type="button"
+                                    onMouseDown={e => { e.preventDefault(); setProductSearch(rack!); }}
+                                    className="px-1.5 py-0.5 rounded bg-amber-100 hover:bg-amber-200 text-amber-900 dark:bg-amber-950 dark:hover:bg-amber-900 dark:text-amber-200 font-bold border border-amber-300 dark:border-amber-700 shrink-0 cursor-pointer"
+                                  >
+                                    Rack {rack}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                            {availableCompositions.length > 0 && (
+                              <div className="flex items-center gap-1 overflow-x-auto pb-0.5 scrollbar-none">
+                                <span className="font-bold text-blue-600 dark:text-blue-400 shrink-0">🧪 Quick Formula:</span>
+                                {availableCompositions.slice(0, 8).map(comp => (
+                                  <button
+                                    key={comp}
+                                    type="button"
+                                    onMouseDown={e => { e.preventDefault(); setProductSearch(comp!); }}
+                                    className="px-1.5 py-0.5 rounded bg-blue-100 hover:bg-blue-200 text-blue-900 dark:bg-blue-950 dark:hover:bg-blue-900 dark:text-blue-200 font-medium border border-blue-300 dark:border-blue-700 shrink-0 cursor-pointer truncate max-w-[130px]"
+                                    title={comp!}
+                                  >
+                                    {comp}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        <div className="overflow-y-auto flex-1 bg-card">
+                          <table className="w-full text-[11px] text-left border-collapse">
+                            <thead className="bg-primary text-primary-foreground sticky top-0 z-10 font-bold">
+                              <tr>
+                                <th className="px-2 py-1.5">Product & Salt</th>
+                                <th className="px-2 py-1.5 w-16">Pack</th>
+                                <th className="px-2 py-1.5 w-20">Location</th>
+                                <th className="px-2 py-1.5 w-24">Company</th>
+                                <th className="px-2 py-1.5 w-20 text-right">MRP</th>
+                                <th className="px-2 py-1.5 w-20 text-right">Cost Rate</th>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                            </thead>
+                            <tbody>
+                              {filteredProducts.slice(0, 50).map((p, idx) => {
+                                const isSelected = idx === selectedDropdownIndex;
+                                return (
+                                  <tr key={p.id}
+                                    id={`purchase-dropdown-item-${idx}`}
+                                    className={`cursor-pointer border-b border-border/30 transition-colors ${
+                                      isSelected
+                                        ? 'bg-blue-600 text-white dark:bg-cyan-600 font-bold'
+                                        : idx % 2 === 0 ? 'bg-accent/20 hover:bg-primary/10' : 'bg-card hover:bg-primary/10'
+                                    }`}
+                                    onMouseDown={e => { e.preventDefault(); selectProduct(i, p); }}>
+                                    <td className="px-2 py-1 font-semibold">
+                                      <div className="flex items-center gap-1.5">
+                                        <span>{p.productName}</span>
+                                        {p.scheduleDrug && (
+                                          <span className={`text-[8px] px-1 rounded font-black border ${isSelected ? 'bg-red-500 text-white border-white' : 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300 border-red-300'}`}>
+                                            Rx
+                                          </span>
+                                        )}
+                                      </div>
+                                      {p.composition && (
+                                        <div className={`text-[9px] truncate max-w-[220px] font-normal ${isSelected ? 'text-cyan-100' : 'text-muted-foreground'}`}>
+                                          🧪 {p.composition}
+                                        </div>
+                                      )}
+                                    </td>
+                                    <td className="px-2 py-1">{p.packSize || '-'}</td>
+                                    <td className="px-2 py-1 text-[10px]">
+                                      {p.rackLocation ? (
+                                        <span className={`px-1.5 py-0.5 rounded font-bold ${isSelected ? 'bg-blue-700 text-white' : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'}`}>
+                                          📍 {p.rackLocation}
+                                        </span>
+                                      ) : '-'}
+                                    </td>
+                                    <td className="px-2 py-1 truncate">{p.manufacturer || '-'}</td>
+                                    <td className="px-2 py-1 text-right font-mono">{p.mrp ? `₹${p.mrp.toFixed(2)}` : '-'}</td>
+                                    <td className="px-2 py-1 text-right font-mono">{p.unitPrice ? `₹${p.unitPrice.toFixed(2)}` : '-'}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {/* ValueSoft-style Live Product Status Footer */}
+                        {filteredProducts[selectedDropdownIndex] && (
+                          <div className="bg-slate-900 text-slate-100 p-2.5 border-t-2 border-primary/60 text-[11px] shrink-0 shadow-inner">
+                            <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                              <div className="flex items-center gap-2">
+                                <span className="bg-cyan-500/20 text-cyan-300 font-black px-1.5 py-0.5 rounded text-[9px] uppercase border border-cyan-500/40 tracking-wider">
+                                  SELECTED PURCHASE PRODUCT
+                                </span>
+                                <span className="font-extrabold text-xs text-white tracking-wide">{filteredProducts[selectedDropdownIndex].productName}</span>
+                                {filteredProducts[selectedDropdownIndex].scheduleDrug && (
+                                  <span className="bg-red-500 text-white font-bold text-[9px] px-1 rounded">Rx (Schedule H)</span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-3 font-mono text-[11px]">
+                                <span>MRP: <strong className="text-emerald-400 text-xs">₹{filteredProducts[selectedDropdownIndex].mrp ? filteredProducts[selectedDropdownIndex].mrp.toFixed(2) : '0.00'}</strong></span>
+                                <span>Cost Rate: <strong className="text-cyan-300 text-xs font-extrabold">₹{filteredProducts[selectedDropdownIndex].unitPrice ? filteredProducts[selectedDropdownIndex].unitPrice.toFixed(2) : '0.00'}</strong></span>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px] pt-1 border-t border-slate-800 text-slate-300">
+                              <div><span className="text-slate-400 font-semibold">Pack:</span> <span className="font-medium text-white">{filteredProducts[selectedDropdownIndex].packSize || '1x1'}</span></div>
+                              <div><span className="text-slate-400 font-semibold">HSN Code:</span> <span className="font-mono text-cyan-300 font-bold">{filteredProducts[selectedDropdownIndex].hsnSacCode || 'N/A'}</span></div>
+                              <div><span className="text-slate-400 font-semibold">GST %:</span> <span className="font-mono text-emerald-300 font-bold">{filteredProducts[selectedDropdownIndex].gstPercentage || 12}%</span></div>
+                              <div><span className="text-slate-400 font-semibold">Company:</span> <span className="font-medium text-white">{filteredProducts[selectedDropdownIndex].manufacturer || 'N/A'}</span></div>
+                            </div>
+                            {(filteredProducts[selectedDropdownIndex].composition || filteredProducts[selectedDropdownIndex].rackLocation) && (
+                              <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] bg-slate-950/80 px-2 py-1 rounded border border-slate-800 mt-1">
+                                {filteredProducts[selectedDropdownIndex].composition && <span className="text-cyan-300"><strong className="text-slate-400">Salt Formula:</strong> {filteredProducts[selectedDropdownIndex].composition}</span>}
+                                {filteredProducts[selectedDropdownIndex].rackLocation && <span className="text-amber-300 font-bold ml-auto"><strong className="text-slate-400">Rack Location:</strong> 📍 {filteredProducts[selectedDropdownIndex].rackLocation}</span>}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
                   </td>
@@ -402,7 +638,20 @@ function CellInput({ row, field, value, onChange, type = 'text', align, mono, bo
         className={`h-6 text-[11px] border-0 bg-transparent px-1 focus-visible:ring-1 focus-visible:ring-primary ${align === 'right' ? 'text-right' : ''} ${mono ? 'font-mono' : ''} ${bold ? 'font-bold' : ''}`}
         type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
         min={type === 'number' ? 0 : undefined} step={type === 'number' ? 'any' : undefined}
-        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onEnter?.(); } }}
+onKeyDown={e => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            const rowInputs = Array.from(document.querySelectorAll(`input[data-row="${row}"]`));
+            const currentIndex = rowInputs.indexOf(e.currentTarget as HTMLInputElement);
+            if (currentIndex >= 0 && currentIndex < rowInputs.length - 1) {
+              const nextInput = rowInputs[currentIndex + 1] as HTMLInputElement;
+              nextInput.focus();
+              nextInput.select();
+            } else {
+              onEnter?.();
+            }
+          }
+        }}
       />
     </td>
   );
