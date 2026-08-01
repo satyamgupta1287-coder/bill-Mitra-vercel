@@ -155,26 +155,62 @@ export default function CreatePurchasePage() {
     try {
       const reader = new FileReader();
       reader.onload = async (evt) => {
-        const base64Data = (evt.target?.result as string).split(',')[1];
-        if (!base64Data) {
-          toast.error('Failed to read image', { id: 'ai-parse' });
-          setParsingAI(false);
-          return;
-        }
+        const img = new Image();
+        img.onload = async () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 1200;
+          const MAX_HEIGHT = 1200;
+          let width = img.width;
+          let height = img.height;
 
-        try {
-          const res = await fetch('/api/parse-invoice', {
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height = Math.round((height * MAX_WIDTH) / width);
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width = Math.round((width * MAX_HEIGHT) / height);
+              height = MAX_HEIGHT;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+             ctx.drawImage(img, 0, 0, width, height);
+          }
+          
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
+          const base64Data = compressedDataUrl.split(',')[1];
+
+          try {
+            const res = await fetch('/api/parse-invoice', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ imageBase64: base64Data }),
           });
 
+          const contentType = res.headers.get('content-type');
           if (!res.ok) {
-            const err = await res.json();
-            throw new Error(err.error || 'Failed to parse invoice');
+            let errorMsg = 'Failed to parse invoice';
+            if (contentType && contentType.includes('application/json')) {
+               const err = await res.json();
+               errorMsg = err.error || errorMsg;
+            } else {
+               errorMsg = await res.text();
+            }
+            throw new Error(errorMsg);
           }
 
-          const data = await res.json();
+          let data;
+          if (contentType && contentType.includes('application/json')) {
+             data = await res.json();
+          } else {
+             const text = await res.text();
+             throw new Error(`Server returned non-JSON: ${text.substring(0, 50)}...`);
+          }
           
           if (data.supplierName) {
             // Try to match supplier
@@ -230,6 +266,8 @@ export default function CreatePurchasePage() {
           setParsingAI(false);
           if (fileInputRef.current) fileInputRef.current.value = '';
         }
+        }; // end img.onload
+        img.src = evt.target?.result as string;
       };
       reader.readAsDataURL(file);
     } catch (err: any) {
