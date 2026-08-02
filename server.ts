@@ -58,7 +58,7 @@ Extract invoice details from this pharma bill image and return a JSON object wit
 CRITICAL ACCURACY INSTRUCTIONS FOR PHARMA B2B INVOICES:
 1. Extract ALL line items on the bill carefully (do not miss any row).
 2. The 'Rate' column on the bill is printedRate (gross rate, e.g. 76.80).
-3. The 'Dis%' column on the bill is discountPercent (trade discount %, e.g. 6.00%). If absent on individual lines but present at bottom as 'Less Discount', set 'tradeDiscountPercent' and 'discountPercent' to that percentage (e.g. 6.00).
+3. READ DISCOUNT PER ROW: The 'Dis%' column often varies per product (e.g. 5%, 6%, 7%, 0%). You MUST read the 'Dis%' column individually for EACH row and set it as 'discountPercent'. ONLY fallback to a global discount if individual rows do not specify one.
 4. Calculate net pre-tax 'purchaseRate' = printedRate * (1 - discountPercent/100) (e.g. 76.80 * 0.94 = 72.192).
 5. Taxable amount for an item = quantity * purchaseRate.
 6. GST for an item = Taxable amount * (gstPercentage / 100). (e.g. 2.5+2.5 => gstPercentage = 5.0).

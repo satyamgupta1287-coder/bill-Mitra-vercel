@@ -31,13 +31,20 @@ const emptyItem = (): LineItem => ({
   batchNumber: '', expiryDate: '', manufacturer: '', packSize: '',
 });
 
+function parseNum(val: any): number {
+  if (val === undefined || val === null) return 0;
+  if (typeof val === 'number') return val;
+  const match = String(val).match(/-?[\d.]+/);
+  return match ? Number(match[0]) : 0;
+}
+
 function getItemNetRate(item: LineItem): number {
-  const gross = Number(item.printedRate) || 0;
-  const dis = Number(item.discountPercent) || 0;
+  const gross = parseNum(item.printedRate);
+  const dis = parseNum(item.discountPercent);
   if (gross > 0 && dis > 0) {
     return gross * (1 - dis / 100);
   }
-  return Number(item.purchaseRate) || gross;
+  return parseNum(item.purchaseRate) || gross;
 }
 
 function focusField(row: number, field: string) {
@@ -330,7 +337,7 @@ export default function CreatePurchasePage() {
           }
 
           if (data.items && Array.isArray(data.items) && data.items.length > 0) {
-            const overallDis = Number(data.tradeDiscountPercent) || 0;
+            const overallDis = parseNum(data.tradeDiscountPercent) || parseNum(data.discountPercent);
 
             const newItems: LineItem[] = data.items.map((aiItem: any) => {
               // Try to find matching product
@@ -341,20 +348,28 @@ export default function CreatePurchasePage() {
                  matchedProd = allProducts.find(p => aiItem.itemName && p.productName.toLowerCase().includes(aiItem.itemName.toLowerCase()));
               }
 
-              const qty = Number(aiItem.quantity) || 1;
-              const gst = aiItem.gstPercentage !== undefined ? Number(aiItem.gstPercentage) : (matchedProd?.gstPercentage ?? 12);
-              const disPct = Number(aiItem.discountPercent) || overallDis || 0;
-              const grossRate = Number(aiItem.printedRate) || Number(aiItem.purchaseRate) || 0;
+              const qty = parseNum(aiItem.quantity) || 1;
+              const gst = aiItem.gstPercentage !== undefined ? parseNum(aiItem.gstPercentage) : (matchedProd?.gstPercentage ?? 12);
+              const disPct = parseNum(aiItem.discountPercent) || overallDis || 0;
+              let grossRate = parseNum(aiItem.printedRate);
+              let purRate = parseNum(aiItem.purchaseRate);
+
+              // If gross is missing but lineTotal exists, compute it
+              if (!grossRate && aiItem.lineTotal && qty > 0) {
+                 grossRate = parseNum(aiItem.lineTotal) / qty;
+              }
+              // If gross is still missing, fallback to purRate
+              if (!grossRate) grossRate = purRate;
 
               let netRate = 0;
               if (grossRate > 0 && disPct > 0) {
                 netRate = grossRate * (1 - disPct / 100);
-              } else if (aiItem.purchaseRate) {
-                netRate = Number(aiItem.purchaseRate);
+              } else if (purRate > 0) {
+                netRate = purRate;
               }
 
               if (!netRate && aiItem.lineTotal) {
-                const lineTot = Number(aiItem.lineTotal);
+                const lineTot = parseNum(aiItem.lineTotal);
                 netRate = (lineTot / (1 + gst / 100)) / qty;
               }
 
@@ -366,12 +381,12 @@ export default function CreatePurchasePage() {
                 productId: matchedProd?.id,
                 hsnSacCode: aiItem.hsnSacCode || matchedProd?.hsnSacCode || '',
                 quantity: qty,
-                freeQuantity: Number(aiItem.freeQuantity) || 0,
+                freeQuantity: parseNum(aiItem.freeQuantity) || 0,
                 printedRate: finalGrossRate,
                 discountPercent: disPct,
                 purchaseRate: netRate,
-                saleRate: Number(aiItem.saleRate) || Number(aiItem.unitPrice) || matchedProd?.unitPrice || Number((netRate * 1.15).toFixed(2)) || 0,
-                mrp: Number(aiItem.mrp) || matchedProd?.mrp || Number((netRate * 1.25).toFixed(2)) || 0,
+                saleRate: parseNum(aiItem.saleRate) || parseNum(aiItem.unitPrice) || matchedProd?.unitPrice || Number((netRate * 1.15).toFixed(2)) || 0,
+                mrp: parseNum(aiItem.mrp) || matchedProd?.mrp || Number((netRate * 1.25).toFixed(2)) || 0,
                 gstPercentage: gst,
                 batchNumber: aiItem.batchNumber || '',
                 expiryDate: aiItem.expiryDate || '',
