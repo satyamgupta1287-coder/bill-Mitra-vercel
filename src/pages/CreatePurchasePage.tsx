@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { getSuppliers, getProducts, saveBulkPurchase } from 'zite-endpoints-sdk';
+import { useNavigate, useParams } from 'react-router-dom';
+import { getSuppliers, getProducts, getPurchases, saveBulkPurchase } from 'zite-endpoints-sdk';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
@@ -38,6 +38,9 @@ function focusField(row: number, field: string) {
 
 export default function CreatePurchasePage() {
   const navigate = useNavigate();
+  const { purchaseNumber } = useParams<{ purchaseNumber?: string }>();
+  const isEditing = Boolean(purchaseNumber);
+
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [allProducts, setAllProducts] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
@@ -64,11 +67,51 @@ export default function CreatePurchasePage() {
     Promise.all([
       getSuppliers({}),
       getProducts({ limit: 500 }),
-    ]).then(([suppRes, prodRes]) => {
-      setSuppliers(suppRes.suppliers);
-      setAllProducts(prodRes.products);
+      purchaseNumber ? getPurchases({}) : Promise.resolve(null),
+    ]).then(([suppRes, prodRes, purRes]) => {
+      const sups = suppRes.suppliers || [];
+      const prods = prodRes.products || [];
+      setSuppliers(sups);
+      setAllProducts(prods);
+
+      if (purchaseNumber && purRes) {
+        const targetBill = purRes.bills.find((b: any) => b.purchaseNumber === purchaseNumber);
+        if (targetBill) {
+          if (targetBill.purchaseDate) {
+            setPurchaseDate(targetBill.purchaseDate);
+          }
+          if (targetBill.supplierInvoiceNumber) {
+            setSupplierInvoiceNumber(targetBill.supplierInvoiceNumber);
+          }
+          if (targetBill.supplierName) {
+            const matchedSup = sups.find((s: any) => s.supplierName === targetBill.supplierName);
+            if (matchedSup) setSupplierId(matchedSup.id);
+          }
+          if (targetBill.items && targetBill.items.length > 0) {
+            const loaded: LineItem[] = targetBill.items.map((it: any) => ({
+              itemName: it.productName || it.itemName || '',
+              productId: it.product || it.productId,
+              hsnSacCode: it.hsnSacCode || '',
+              quantity: it.quantity || 1,
+              freeQuantity: it.freeQuantity || 0,
+              purchaseRate: it.purchaseRate || 0,
+              saleRate: it.unitPrice || it.saleRate || 0,
+              mrp: it.mrp || 0,
+              gstPercentage: it.gstPercentage || 12,
+              batchNumber: it.batchNumber || '',
+              expiryDate: it.expiryDate || '',
+              manufacturer: it.manufacturer || '',
+              packSize: it.packSize || '',
+            }));
+            loaded.push(emptyItem());
+            setItems(loaded);
+          }
+        } else {
+          toast.error('Purchase bill not found');
+        }
+      }
     }).finally(() => setLoading(false));
-  }, []);
+  }, [purchaseNumber]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -282,16 +325,35 @@ export default function CreatePurchasePage() {
                  matchedProd = allProducts.find(p => aiItem.itemName && p.productName.toLowerCase().includes(aiItem.itemName.toLowerCase()));
               }
 
+              const qty = Number(aiItem.quantity) || 1;
+              const gst = aiItem.gstPercentage !== undefined ? Number(aiItem.gstPercentage) : (matchedProd?.gstPercentage ?? 12);
+              const printedRate = Number(aiItem.printedRate) || Number(aiItem.purchaseRate) || 0;
+              const disPct = Number(aiItem.discountPercent) || Number(data.tradeDiscountPercent) || 0;
+
+              let purRate = 0;
+              if (aiItem.purchaseRate && (!disPct || disPct === 0)) {
+                purRate = Number(aiItem.purchaseRate);
+              } else if (printedRate > 0) {
+                purRate = printedRate * (1 - disPct / 100);
+              }
+
+              if (!purRate && aiItem.lineTotal) {
+                const lineTot = Number(aiItem.lineTotal);
+                purRate = (lineTot / (1 + gst / 100)) / qty;
+              }
+
+              purRate = Number(purRate.toFixed(2));
+
               return {
                 itemName: aiItem.itemName || '',
                 productId: matchedProd?.id,
                 hsnSacCode: aiItem.hsnSacCode || matchedProd?.hsnSacCode || '',
-                quantity: Number(aiItem.quantity) || 1,
+                quantity: qty,
                 freeQuantity: Number(aiItem.freeQuantity) || 0,
-                purchaseRate: Number(aiItem.purchaseRate) || matchedProd?.unitPrice || 0,
-                saleRate: Number(aiItem.saleRate) || Number(aiItem.unitPrice) || matchedProd?.unitPrice || 0,
-                mrp: Number(aiItem.mrp) || matchedProd?.mrp || 0,
-                gstPercentage: Number(aiItem.gstPercentage) || matchedProd?.gstPercentage || 12,
+                purchaseRate: purRate,
+                saleRate: Number(aiItem.saleRate) || Number(aiItem.unitPrice) || matchedProd?.unitPrice || Number((purRate * 1.15).toFixed(2)) || 0,
+                mrp: Number(aiItem.mrp) || matchedProd?.mrp || Number((purRate * 1.25).toFixed(2)) || 0,
+                gstPercentage: gst,
                 batchNumber: aiItem.batchNumber || '',
                 expiryDate: aiItem.expiryDate || '',
                 manufacturer: aiItem.manufacturer || matchedProd?.manufacturer || '',
@@ -339,6 +401,7 @@ export default function CreatePurchasePage() {
     setSaving(true);
     try {
       await saveBulkPurchase({
+        existingPurchaseNumber: purchaseNumber || undefined,
         purchaseDate,
         supplierId: supplierId || undefined,
         supplierInvoiceNumber: supplierInvoiceNumber || undefined,
@@ -358,7 +421,7 @@ export default function CreatePurchasePage() {
           packSize: i.packSize || undefined,
         })),
       });
-      toast.success('Purchase bill saved!');
+      toast.success(purchaseNumber ? 'Purchase bill updated!' : 'Purchase bill saved!');
       navigate('/purchases');
     } catch { toast.error('Failed to save purchase'); }
     finally { setSaving(false); }

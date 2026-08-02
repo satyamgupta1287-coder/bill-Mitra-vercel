@@ -4,6 +4,7 @@ import { createEndpoint, Purchases, Products, Suppliers } from 'zite-integration
 export default createEndpoint({
   authenticated: true,
   inputSchema: z.object({
+    existingPurchaseNumber: z.string().optional(),
     purchaseDate: z.string(),
     supplierId: z.string().optional(),
     supplierInvoiceNumber: z.string().optional(),
@@ -26,7 +27,24 @@ export default createEndpoint({
   outputSchema: z.object({ purchaseCount: z.number(), purchaseNumber: z.string() }),
   execute: async ({ input, context }) => {
     const companyId = Array.isArray(context.user.company) ? context.user.company[0] : context.user.company;
-    const refNum = `PUR-${Date.now().toString(36).toUpperCase()}`;
+    const refNum = input.existingPurchaseNumber || `PUR-${Date.now().toString(36).toUpperCase()}`;
+
+    // If editing existing purchase bill, revert old stock additions and delete old purchase records
+    if (input.existingPurchaseNumber) {
+      const oldRecords = await Purchases.findAll({ filters: { owner: context.user.id, purchaseNumber: input.existingPurchaseNumber }, limit: 500 });
+      for (const oldP of oldRecords.records) {
+        const pid = Array.isArray(oldP.product) ? oldP.product[0] : oldP.product;
+        if (pid) {
+          const oldProd = await Products.findOne({ id: pid });
+          if (oldProd) {
+            const oldQty = (oldP.quantity || 0) + (oldP.freeQuantity || 0);
+            const newStock = Math.max(0, (oldProd.stockQuantity || 0) - oldQty);
+            await Products.update({ id: pid, record: { stockQuantity: newStock } });
+          }
+        }
+        await Purchases.delete({ id: oldP.id });
+      }
+    }
 
     let supplierName = '';
     if (input.supplierId) {

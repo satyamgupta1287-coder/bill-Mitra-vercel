@@ -252,6 +252,7 @@ export default function App() {
                 <Route path="/invoices/:id" element={<InvoiceDetailPage />} />
                 <Route path="/purchases" element={<PurchasesPage />} />
                 <Route path="/purchases/new" element={<CreatePurchasePage />} />
+                <Route path="/purchases/:purchaseNumber/edit" element={<CreatePurchasePage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/settings/templates" element={<InvoiceTemplatesPage />} />
                 <Route path="/reports" element={<ReportsPage />} />
