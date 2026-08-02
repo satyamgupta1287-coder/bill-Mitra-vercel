@@ -47,7 +47,7 @@ Extract invoice details from this pharma bill image and return a JSON object wit
       "quantity": number (Paid quantity. If Lot is 9+1 and Qty+FR is 10, paid qty is 9, free qty is 1. If no lot split, use Qty),
       "freeQuantity": number (Free/Bonus scheme qty, e.g. 1 if 9+1, else 0),
       "printedRate": number (Gross rate printed in the 'Rate' column before discount, e.g. 76.80),
-      "discountPercent": number (Line trade discount Dis%, e.g. 6.00),
+      "discountPercent": number (Read the 'Dis%' column on the invoice EXACTLY. E.g. if it says 6.00, put 6.00),
       "purchaseRate": number (CRITICAL: Net pre-tax purchase rate AFTER trade discount per unit! Formula: printedRate * (1 - discountPercent/100). E.g. 76.80 * 0.94 = 72.19),
       "gstPercentage": number (Total GST %. If 2.5+2.5, it is 5. If 0+0, it is 0. If 6+6, it is 12),
       "lineTotal": number (Final line total amount printed on the rightmost column, e.g. 768.00 if gross or 758.00 if net)
@@ -58,7 +58,7 @@ Extract invoice details from this pharma bill image and return a JSON object wit
 CRITICAL ACCURACY INSTRUCTIONS FOR PHARMA B2B INVOICES:
 1. Extract ALL line items on the bill carefully (do not miss any row).
 2. The 'Rate' column on the bill is printedRate (gross rate, e.g. 76.80).
-3. READ DISCOUNT PER ROW: The 'Dis%' column often varies per product (e.g. 5%, 6%, 7%, 0%). You MUST read the 'Dis%' column individually for EACH row and set it as 'discountPercent'. ONLY fallback to a global discount if individual rows do not specify one.
+3. READ DISCOUNT PER ROW: Look at the column specifically labeled 'Dis%' or 'Disc%' on the invoice image. For EVERY row, read the exact number printed in that column and set it as 'discountPercent' (e.g. if it says 5.00, put 5.00. If it says 6.00, put 6.00. If 0, put 0). DO NOT default to 0 if a number is printed!
 4. Calculate net pre-tax 'purchaseRate' = printedRate * (1 - discountPercent/100) (e.g. 76.80 * 0.94 = 72.192).
 5. Taxable amount for an item = quantity * purchaseRate.
 6. GST for an item = Taxable amount * (gstPercentage / 100). (e.g. 2.5+2.5 => gstPercentage = 5.0).
