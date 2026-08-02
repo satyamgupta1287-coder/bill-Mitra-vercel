@@ -55,14 +55,22 @@ Extract invoice details from this pharma bill image and return a JSON object wit
   ]
 }
 
-CRITICAL ACCURACY INSTRUCTIONS FOR PHARMA BILLS:
+CRITICAL ACCURACY INSTRUCTIONS FOR PHARMA B2B INVOICES:
 1. Extract ALL line items on the bill carefully (do not miss any row).
-2. Look for 'Dis%' column OR bottom 'Less Discount' (e.g. 6.00%). If present, set 'discountPercent' to 6.00.
-3. Calculate 'purchaseRate' as the NET pre-tax rate after discount = printedRate * (1 - discountPercent/100).
-4. VERIFY GRAND TOTAL: Check the bottom right 'Net Payable' / 'Net Amount' on the bill image (e.g. 5781.00).
-   The sum of (quantity * purchaseRate * (1 + gstPercentage/100)) across all items MUST equal 'netPayableAmount'.
-   If the calculated total differs from 'netPayableAmount', adjust the item 'purchaseRate' values so the calculated total matches 'netPayableAmount' EXACTLY to the rupee.
-5. Return ONLY valid raw JSON with no backticks or markdown wrapper.
+2. The 'Rate' column on the bill is printedRate (gross rate, e.g. 76.80).
+3. The 'Dis%' column on the bill is discountPercent (trade discount %, e.g. 6.00%). If absent on individual lines but present at bottom as 'Less Discount', set 'tradeDiscountPercent' and 'discountPercent' to that percentage (e.g. 6.00).
+4. Calculate net pre-tax 'purchaseRate' = printedRate * (1 - discountPercent/100) (e.g. 76.80 * 0.94 = 72.192).
+5. Taxable amount for an item = quantity * purchaseRate.
+6. GST for an item = Taxable amount * (gstPercentage / 100). (e.g. 2.5+2.5 => gstPercentage = 5.0).
+7. VERIFY GRAND TOTAL:
+   - Gross Subtotal = sum(quantity * printedRate)
+   - Total Discount = sum(quantity * printedRate * discountPercent / 100)
+   - Total Taxable = Gross Subtotal - Total Discount
+   - Total GST = sum(Taxable_i * gstPercentage_i / 100)
+   - Calculated Net Total = Total Taxable + Total GST
+   - Compare with 'Net Payable' on the bill (e.g. 5781.00).
+   - Set 'billAdjustment' = Number((netPayableAmount - Calculated Net Total).toFixed(2)).
+8. Return ONLY valid raw JSON with no backticks or markdown wrapper.
 `;
 
       const response = await ai.models.generateContent({

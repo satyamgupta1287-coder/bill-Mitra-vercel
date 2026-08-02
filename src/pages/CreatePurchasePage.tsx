@@ -405,15 +405,30 @@ export default function CreatePurchasePage() {
   const [billAdjustment, setBillAdjustment] = useState<number>(0);
 
   // Calculations
-  let subtotal = 0, totalGst = 0;
+  let grossSubtotal = 0;
+  let totalDiscount = 0;
+  let totalGst = 0;
   const validItems = items.filter(i => i.itemName);
+
   validItems.forEach(item => {
+    const qty = Number(item.quantity) || 0;
+    const grossRate = Number(item.printedRate) || Number(item.purchaseRate) || 0;
+    const disPct = Number(item.discountPercent) || 0;
     const netRate = getItemNetRate(item);
-    const taxable = item.quantity * netRate;
-    subtotal += taxable;
-    totalGst += taxable * ((item.gstPercentage || 0) / 100);
+    const gstPct = Number(item.gstPercentage) || 0;
+
+    const lineGross = qty * grossRate;
+    const lineDis = lineGross * (disPct / 100);
+    const lineTaxable = qty * netRate;
+    const lineGst = lineTaxable * (gstPct / 100);
+
+    grossSubtotal += lineGross;
+    totalDiscount += lineDis;
+    totalGst += lineGst;
   });
-  const total = subtotal + totalGst + billAdjustment;
+
+  const taxableSubtotal = grossSubtotal - totalDiscount;
+  const total = taxableSubtotal + totalGst + billAdjustment;
 
   const handleSubmit = async () => {
     const filledItems = items.filter(i => i.itemName);
@@ -823,14 +838,18 @@ onKeyDown={e => {
         <div className="px-3 py-2 flex flex-wrap items-end gap-x-4 gap-y-2 justify-between">
           <div className="flex items-center gap-3 text-[11px]">
             <SummaryCell label="Items" value={String(validItems.length)} bold />
-            <SummaryCell label="Subtotal" value={subtotal.toFixed(2)} />
+            <SummaryCell label="Gross Subtotal" value={grossSubtotal.toFixed(2)} />
+            {totalDiscount > 0 && (
+              <SummaryCell label="Less Discount" value={`-${totalDiscount.toFixed(2)}`} />
+            )}
+            <SummaryCell label="Taxable" value={taxableSubtotal.toFixed(2)} />
             <SummaryCell label="GST" value={totalGst.toFixed(2)} />
             <div className="flex flex-col items-center">
               <span className="text-[9px] text-muted-foreground font-medium">Adj / Rounding</span>
               <Input
                 type="number"
                 step="any"
-                className="h-5 text-[10px] w-16 text-center border px-1"
+                className="h-5 text-[10px] w-16 text-center border px-1 font-mono"
                 value={billAdjustment || ''}
                 onChange={e => setBillAdjustment(Number(e.target.value))}
                 placeholder="0.00"
