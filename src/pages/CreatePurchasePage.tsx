@@ -13,6 +13,8 @@ type LineItem = {
   hsnSacCode: string;
   quantity: number;
   freeQuantity: number;
+  printedRate: number;
+  discountPercent: number;
   purchaseRate: number;
   saleRate: number;
   mrp: number;
@@ -25,9 +27,18 @@ type LineItem = {
 
 const emptyItem = (): LineItem => ({
   itemName: '', hsnSacCode: '', quantity: 1, freeQuantity: 0,
-  purchaseRate: 0, saleRate: 0, mrp: 0, gstPercentage: 12,
+  printedRate: 0, discountPercent: 0, purchaseRate: 0, saleRate: 0, mrp: 0, gstPercentage: 12,
   batchNumber: '', expiryDate: '', manufacturer: '', packSize: '',
 });
+
+function getItemNetRate(item: LineItem): number {
+  const gross = Number(item.printedRate) || 0;
+  const dis = Number(item.discountPercent) || 0;
+  if (gross > 0 && dis > 0) {
+    return gross * (1 - dis / 100);
+  }
+  return Number(item.purchaseRate) || gross;
+}
 
 function focusField(row: number, field: string) {
   setTimeout(() => {
@@ -314,8 +325,13 @@ export default function CreatePurchasePage() {
             const date = new Date(data.purchaseDate);
             if (!isNaN(date.getTime())) setPurchaseDate(date.toISOString().split('T')[0]);
           }
+          if (data.billAdjustment !== undefined) {
+            setBillAdjustment(Number(data.billAdjustment) || 0);
+          }
 
           if (data.items && Array.isArray(data.items) && data.items.length > 0) {
+            const overallDis = Number(data.tradeDiscountPercent) || 0;
+
             const newItems: LineItem[] = data.items.map((aiItem: any) => {
               // Try to find matching product
               let matchedProd = allProducts.find(p => p.productName.toLowerCase() === aiItem.itemName?.toLowerCase());
@@ -327,22 +343,23 @@ export default function CreatePurchasePage() {
 
               const qty = Number(aiItem.quantity) || 1;
               const gst = aiItem.gstPercentage !== undefined ? Number(aiItem.gstPercentage) : (matchedProd?.gstPercentage ?? 12);
-              const printedRate = Number(aiItem.printedRate) || Number(aiItem.purchaseRate) || 0;
-              const disPct = Number(aiItem.discountPercent) || Number(data.tradeDiscountPercent) || 0;
+              const disPct = Number(aiItem.discountPercent) || overallDis || 0;
+              const grossRate = Number(aiItem.printedRate) || Number(aiItem.purchaseRate) || 0;
 
-              let purRate = 0;
-              if (aiItem.purchaseRate && (!disPct || disPct === 0)) {
-                purRate = Number(aiItem.purchaseRate);
-              } else if (printedRate > 0) {
-                purRate = printedRate * (1 - disPct / 100);
+              let netRate = 0;
+              if (grossRate > 0 && disPct > 0) {
+                netRate = grossRate * (1 - disPct / 100);
+              } else if (aiItem.purchaseRate) {
+                netRate = Number(aiItem.purchaseRate);
               }
 
-              if (!purRate && aiItem.lineTotal) {
+              if (!netRate && aiItem.lineTotal) {
                 const lineTot = Number(aiItem.lineTotal);
-                purRate = (lineTot / (1 + gst / 100)) / qty;
+                netRate = (lineTot / (1 + gst / 100)) / qty;
               }
 
-              purRate = Number(purRate.toFixed(2));
+              netRate = Number(netRate.toFixed(2));
+              const finalGrossRate = grossRate > 0 ? grossRate : (disPct > 0 ? Number((netRate / (1 - disPct / 100)).toFixed(2)) : netRate);
 
               return {
                 itemName: aiItem.itemName || '',
@@ -350,9 +367,11 @@ export default function CreatePurchasePage() {
                 hsnSacCode: aiItem.hsnSacCode || matchedProd?.hsnSacCode || '',
                 quantity: qty,
                 freeQuantity: Number(aiItem.freeQuantity) || 0,
-                purchaseRate: purRate,
-                saleRate: Number(aiItem.saleRate) || Number(aiItem.unitPrice) || matchedProd?.unitPrice || Number((purRate * 1.15).toFixed(2)) || 0,
-                mrp: Number(aiItem.mrp) || matchedProd?.mrp || Number((purRate * 1.25).toFixed(2)) || 0,
+                printedRate: finalGrossRate,
+                discountPercent: disPct,
+                purchaseRate: netRate,
+                saleRate: Number(aiItem.saleRate) || Number(aiItem.unitPrice) || matchedProd?.unitPrice || Number((netRate * 1.15).toFixed(2)) || 0,
+                mrp: Number(aiItem.mrp) || matchedProd?.mrp || Number((netRate * 1.25).toFixed(2)) || 0,
                 gstPercentage: gst,
                 batchNumber: aiItem.batchNumber || '',
                 expiryDate: aiItem.expiryDate || '',
@@ -382,20 +401,24 @@ export default function CreatePurchasePage() {
     }
   };
 
+  // State for manual bill adjustment / rounding
+  const [billAdjustment, setBillAdjustment] = useState<number>(0);
+
   // Calculations
   let subtotal = 0, totalGst = 0;
   const validItems = items.filter(i => i.itemName);
   validItems.forEach(item => {
-    const taxable = item.quantity * item.purchaseRate;
+    const netRate = getItemNetRate(item);
+    const taxable = item.quantity * netRate;
     subtotal += taxable;
-    totalGst += taxable * (item.gstPercentage / 100);
+    totalGst += taxable * ((item.gstPercentage || 0) / 100);
   });
-  const total = subtotal + totalGst;
+  const total = subtotal + totalGst + billAdjustment;
 
   const handleSubmit = async () => {
     const filledItems = items.filter(i => i.itemName);
     if (!filledItems.length) { toast.error('Add at least one item'); return; }
-    if (filledItems.some(i => i.purchaseRate <= 0)) { toast.error('All items must have a valid rate'); return; }
+    if (filledItems.some(i => getItemNetRate(i) <= 0)) { toast.error('All items must have a valid rate'); return; }
     if (filledItems.some(i => !i.batchNumber)) { toast.error('Batch number is required for all items'); return; }
 
     setSaving(true);
@@ -405,21 +428,24 @@ export default function CreatePurchasePage() {
         purchaseDate,
         supplierId: supplierId || undefined,
         supplierInvoiceNumber: supplierInvoiceNumber || undefined,
-        items: filledItems.map(i => ({
-          productId: i.productId || undefined,
-          itemName: i.itemName,
-          hsnSacCode: i.hsnSacCode || undefined,
-          batchNumber: i.batchNumber,
-          expiryDate: i.expiryDate || undefined,
-          quantity: i.quantity,
-          freeQuantity: i.freeQuantity || undefined,
-          purchaseRate: i.purchaseRate,
-          saleRate: i.saleRate || undefined,
-          mrp: i.mrp || 0,
-          gstPercentage: i.gstPercentage,
-          manufacturer: i.manufacturer || undefined,
-          packSize: i.packSize || undefined,
-        })),
+        items: filledItems.map(i => {
+          const effectiveNetRate = getItemNetRate(i);
+          return {
+            productId: i.productId || undefined,
+            itemName: i.itemName,
+            hsnSacCode: i.hsnSacCode || undefined,
+            batchNumber: i.batchNumber,
+            expiryDate: i.expiryDate || undefined,
+            quantity: i.quantity,
+            freeQuantity: i.freeQuantity || undefined,
+            purchaseRate: effectiveNetRate,
+            saleRate: i.saleRate || undefined,
+            mrp: i.mrp || 0,
+            gstPercentage: i.gstPercentage,
+            manufacturer: i.manufacturer || undefined,
+            packSize: i.packSize || undefined,
+          };
+        }),
       });
       toast.success(purchaseNumber ? 'Purchase bill updated!' : 'Purchase bill saved!');
       navigate('/purchases');
@@ -521,14 +547,16 @@ export default function CreatePurchasePage() {
           <thead className="bg-primary text-primary-foreground sticky top-0 z-10">
             <tr>
               <th className="text-left px-1.5 py-1.5 w-7">#</th>
-              <th className="text-left px-1.5 py-1.5 min-w-[180px]">Product Name</th>
-              <th className="text-left px-1.5 py-1.5 w-14">Pack</th>
-              <th className="text-left px-1.5 py-1.5 w-20">Company</th>
+              <th className="text-left px-1.5 py-1.5 min-w-[170px]">Product Name</th>
+              <th className="text-left px-1.5 py-1.5 w-12">Pack</th>
+              <th className="text-left px-1.5 py-1.5 w-16">Company</th>
               <th className="text-left px-1.5 py-1.5 w-20">Batch *</th>
-              <th className="text-left px-1.5 py-1.5 w-16">Expiry</th>
+              <th className="text-left px-1.5 py-1.5 w-14">Expiry</th>
               <th className="text-right px-1.5 py-1.5 w-12">Qty</th>
               <th className="text-right px-1.5 py-1.5 w-10">Free</th>
-              <th className="text-right px-1.5 py-1.5 w-16" title="Purchase Cost Rate">Pur. Rate</th>
+              <th className="text-right px-1.5 py-1.5 w-16" title="Printed Gross Rate">Pur. Rate</th>
+              <th className="text-right px-1.5 py-1.5 w-12" title="Trade Discount %">Dis %</th>
+              <th className="text-right px-1.5 py-1.5 w-16 text-emerald-300 font-bold" title="Net Rate after discount">Net Rate</th>
               <th className="text-right px-1.5 py-1.5 w-16 text-blue-300 font-bold" title="Selling Rate for Invoices">Sale Rate</th>
               <th className="text-right px-1.5 py-1.5 w-16">MRP</th>
               <th className="text-right px-1.5 py-1.5 w-10">GST%</th>
@@ -538,7 +566,8 @@ export default function CreatePurchasePage() {
           </thead>
           <tbody>
             {items.map((item, i) => {
-              const amt = item.quantity * item.purchaseRate;
+              const netRate = getItemNetRate(item);
+              const lineAmt = item.quantity * netRate * (1 + (item.gstPercentage || 0) / 100);
               const isActive = activeProductRow === i;
               return (
                 <tr key={i} className={`border-b border-border/40 ${i % 2 === 0 ? 'bg-accent/15' : 'bg-card'}`}>
@@ -758,11 +787,25 @@ onKeyDown={e => {
                   <CellInput row={i} field="expiry" value={item.expiryDate} onChange={v => updateItem(i, 'expiryDate', v)} placeholder="MM/YY" onEnter={() => focusField(i, 'qty')} />
                   <CellInput row={i} field="qty" value={item.quantity || ''} onChange={v => updateItem(i, 'quantity', Number(v))} type="number" align="right" bold onEnter={() => focusField(i, 'free')} />
                   <CellInput row={i} field="free" value={item.freeQuantity || ''} onChange={v => updateItem(i, 'freeQuantity', Number(v))} type="number" align="right" onEnter={() => focusField(i, 'rate')} />
-                  <CellInput row={i} field="rate" value={item.purchaseRate || ''} onChange={v => updateItem(i, 'purchaseRate', Number(v))} type="number" align="right" mono onEnter={() => focusField(i, 'saleRate')} />
+                  <CellInput row={i} field="rate" value={item.printedRate || item.purchaseRate || ''} onChange={v => {
+                    const newGross = Number(v);
+                    const dis = item.discountPercent || 0;
+                    updateItem(i, 'printedRate', newGross);
+                    updateItem(i, 'purchaseRate', newGross * (1 - dis / 100));
+                  }} type="number" align="right" mono onEnter={() => focusField(i, 'dis')} />
+                  <CellInput row={i} field="dis" value={item.discountPercent || ''} onChange={v => {
+                    const newDis = Number(v);
+                    const baseGross = item.printedRate || item.purchaseRate || 0;
+                    updateItem(i, 'discountPercent', newDis);
+                    updateItem(i, 'purchaseRate', baseGross * (1 - newDis / 100));
+                  }} type="number" align="right" placeholder="0" onEnter={() => focusField(i, 'saleRate')} />
+                  <td className="px-1.5 py-0.5 text-right font-mono font-bold text-[11px] text-emerald-600 dark:text-emerald-400">
+                    {item.itemName ? netRate.toFixed(2) : ''}
+                  </td>
                   <CellInput row={i} field="saleRate" value={item.saleRate || ''} onChange={v => updateItem(i, 'saleRate', Number(v))} type="number" align="right" mono onEnter={() => focusField(i, 'mrp')} />
                   <CellInput row={i} field="mrp" value={item.mrp || ''} onChange={v => updateItem(i, 'mrp', Number(v))} type="number" align="right" mono onEnter={() => focusField(i, 'gst')} />
                   <CellInput row={i} field="gst" value={item.gstPercentage || ''} onChange={v => updateItem(i, 'gstPercentage', Number(v))} type="number" align="right" onEnter={() => goToNextRow(i)} />
-                  <td className="px-1.5 py-0.5 text-right font-mono font-bold text-[11px]">{item.itemName ? amt.toFixed(2) : ''}</td>
+                  <td className="px-1.5 py-0.5 text-right font-mono font-bold text-[11px]">{item.itemName ? lineAmt.toFixed(2) : ''}</td>
                   <td className="px-0.5">
                     {items.length > 1 && item.itemName && (
                       <button onClick={() => removeItem(i)} className="text-destructive hover:text-destructive/80"><X className="w-3 h-3" /></button>
@@ -782,6 +825,17 @@ onKeyDown={e => {
             <SummaryCell label="Items" value={String(validItems.length)} bold />
             <SummaryCell label="Subtotal" value={subtotal.toFixed(2)} />
             <SummaryCell label="GST" value={totalGst.toFixed(2)} />
+            <div className="flex flex-col items-center">
+              <span className="text-[9px] text-muted-foreground font-medium">Adj / Rounding</span>
+              <Input
+                type="number"
+                step="any"
+                className="h-5 text-[10px] w-16 text-center border px-1"
+                value={billAdjustment || ''}
+                onChange={e => setBillAdjustment(Number(e.target.value))}
+                placeholder="0.00"
+              />
+            </div>
             <div className="border-l border-border pl-3 text-center">
               <div className="text-[9px] text-muted-foreground">Total Amount</div>
               <div className="font-bold text-lg text-primary leading-tight">{formatCurrency(Math.round(total))}</div>

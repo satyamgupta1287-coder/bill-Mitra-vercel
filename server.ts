@@ -34,6 +34,7 @@ Extract invoice details from this pharma bill image and return a JSON object wit
   "invoiceNumber": "string (e.g. 00659)",
   "purchaseDate": "YYYY-MM-DD",
   "tradeDiscountPercent": number (e.g. 6.00 if 'Dis%' or 'Less Discount' column/field is 6.00%),
+  "billAdjustment": number (Rounding or adjustment at bottom if any, e.g. 0.00),
   "netPayableAmount": number (The final Net Payable / Grand Total at bottom right, e.g. 5781.00),
   "items": [
     {
@@ -45,20 +46,22 @@ Extract invoice details from this pharma bill image and return a JSON object wit
       "mrp": number (MRP per unit, e.g. 280.75),
       "quantity": number (Paid quantity. If Lot is 9+1 and Qty+FR is 10, paid qty is 9, free qty is 1. If no lot split, use Qty),
       "freeQuantity": number (Free/Bonus scheme qty, e.g. 1 if 9+1, else 0),
-      "printedRate": number (Gross rate printed on the line before discount, e.g. 76.80),
+      "printedRate": number (Gross rate printed in the 'Rate' column before discount, e.g. 76.80),
       "discountPercent": number (Line trade discount Dis%, e.g. 6.00),
       "purchaseRate": number (CRITICAL: Net pre-tax purchase rate AFTER trade discount per unit! Formula: printedRate * (1 - discountPercent/100). E.g. 76.80 * 0.94 = 72.19),
       "gstPercentage": number (Total GST %. If 2.5+2.5, it is 5. If 0+0, it is 0. If 6+6, it is 12),
-      "lineTotal": number (Final total amount for this item line including discount and tax)
+      "lineTotal": number (Final line total amount printed on the rightmost column, e.g. 768.00 if gross or 758.00 if net)
     }
   ]
 }
 
 CRITICAL ACCURACY INSTRUCTIONS FOR PHARMA BILLS:
 1. Extract ALL line items on the bill carefully (do not miss any row).
-2. Check if there is a trade discount column "Dis%" or overall "Less Discount" at the bottom (e.g. 6.00%).
-3. Calculate 'purchaseRate' as the NET pre-tax rate after discount = printedRate * (1 - Dis%/100).
-4. Ensure the sum of (quantity * purchaseRate * (1 + gstPercentage/100)) across all items equals the 'netPayableAmount' (Net Payable) on the bill.
+2. Look for 'Dis%' column OR bottom 'Less Discount' (e.g. 6.00%). If present, set 'discountPercent' to 6.00.
+3. Calculate 'purchaseRate' as the NET pre-tax rate after discount = printedRate * (1 - discountPercent/100).
+4. VERIFY GRAND TOTAL: Check the bottom right 'Net Payable' / 'Net Amount' on the bill image (e.g. 5781.00).
+   The sum of (quantity * purchaseRate * (1 + gstPercentage/100)) across all items MUST equal 'netPayableAmount'.
+   If the calculated total differs from 'netPayableAmount', adjust the item 'purchaseRate' values so the calculated total matches 'netPayableAmount' EXACTLY to the rupee.
 5. Return ONLY valid raw JSON with no backticks or markdown wrapper.
 `;
 
