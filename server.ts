@@ -47,7 +47,7 @@ Extract invoice details from this pharma bill image and return a JSON object wit
       "quantity": number (Paid quantity. If Lot is 9+1 and Qty+FR is 10, paid qty is 9, free qty is 1. If no lot split, use Qty),
       "freeQuantity": number (Free/Bonus scheme qty, e.g. 1 if 9+1, else 0),
       "printedRate": number (Gross rate printed in the 'Rate' column before discount, e.g. 76.80),
-      "discountPercent": number (Read the 'Dis%' column on the invoice EXACTLY. E.g. if it says 6.00, put 6.00),
+      "discountPercent": number (Mandatory: Extract the exact number from the 'Dis%' column for THIS specific row. E.g. if it says 6.00, put 6.00. Do NOT put 0 unless the column literally says 0 or is blank),
       "purchaseRate": number (CRITICAL: Net pre-tax purchase rate AFTER trade discount per unit! Formula: printedRate * (1 - discountPercent/100). E.g. 76.80 * 0.94 = 72.19),
       "gstPercentage": number (Total GST %. If 2.5+2.5, it is 5. If 0+0, it is 0. If 6+6, it is 12),
       "lineTotal": number (Final line total amount printed on the rightmost column, e.g. 768.00 if gross or 758.00 if net)
@@ -74,7 +74,7 @@ CRITICAL ACCURACY INSTRUCTIONS FOR PHARMA B2B INVOICES:
 `;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3.6-flash',
+        model: 'gemini-3.1-pro-preview',
         contents: [
           {
             role: 'user',
