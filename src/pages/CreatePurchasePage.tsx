@@ -71,10 +71,8 @@ export default function CreatePurchasePage() {
   const [items, setItems] = useState<LineItem[]>([emptyItem()]);
   const [parsingAI, setParsingAI] = useState(false);
   const [parsingExcel, setParsingExcel] = useState(false);
-  const [convertingCsv, setConvertingCsv] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const excelInputRef = useRef<HTMLInputElement>(null);
-  const imageToCsvRef = useRef<HTMLInputElement>(null);
 
   // Search states
   const [supplierSearch, setSupplierSearch] = useState('');
@@ -534,168 +532,6 @@ export default function CreatePurchasePage() {
     }
   };
 
-  const handleImageToCsv = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setConvertingCsv(true);
-    toast.info('Converting image to CSV...', { id: 'img-to-csv' });
-
-    try {
-      const reader = new FileReader();
-      reader.onload = async (evt) => {
-        const img = new Image();
-        img.onload = async () => {
-          const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 1200;
-          const MAX_HEIGHT = 1200;
-          let width = img.width;
-          let height = img.height;
-
-          if (width > height) {
-            if (width > MAX_WIDTH) {
-              height = Math.round((height * MAX_WIDTH) / width);
-              width = MAX_WIDTH;
-            }
-          } else {
-            if (height > MAX_HEIGHT) {
-              width = Math.round((width * MAX_HEIGHT) / height);
-              height = MAX_HEIGHT;
-            }
-          }
-
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-             ctx.drawImage(img, 0, 0, width, height);
-          }
-          
-          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
-          const base64Data = compressedDataUrl.split(',')[1];
-
-          try {
-            const res = await fetch('/api/parse-invoice', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ imageBase64: base64Data }),
-            });
-
-            const contentType = res.headers.get('content-type');
-            if (!res.ok) {
-              let errorMsg = 'Failed to parse invoice';
-              if (contentType && contentType.includes('application/json')) {
-                 const err = await res.json();
-                 errorMsg = err.error || errorMsg;
-              } else {
-                 errorMsg = await res.text();
-              }
-              throw new Error(errorMsg);
-            }
-
-            let data;
-            if (contentType && contentType.includes('application/json')) {
-               data = await res.json();
-            } else {
-               const text = await res.text();
-               throw new Error(`Server returned non-JSON: ${text.substring(0, 50)}...`);
-            }
-            
-            if (data.items && Array.isArray(data.items) && data.items.length > 0) {
-              const headers = ['Item Name', 'Quantity', 'Free', 'Printed Rate', 'Discount %', 'Purchase Rate', 'MRP', 'Sale Rate', 'Batch', 'Expiry', 'GST %', 'Manufacturer', 'Pack', 'HSN'];
-              const overallDis = parseNum(data.tradeDiscountPercent) || parseNum(data.discountPercent);
-
-              const rows = data.items.map((aiItem: any) => {
-                let matchedProd = allProducts.find(p => p.productName.toLowerCase() === aiItem.itemName?.toLowerCase());
-                if (!matchedProd) {
-                   matchedProd = allProducts.find(p => aiItem.itemName && p.productName.toLowerCase().includes(aiItem.itemName.toLowerCase()));
-                }
-
-                const qty = parseNum(aiItem.quantity) || 1;
-                const gst = aiItem.gstPercentage !== undefined && String(aiItem.gstPercentage).trim() !== '' ? parseNum(aiItem.gstPercentage) : (matchedProd?.gstPercentage !== undefined ? matchedProd.gstPercentage : '');
-                
-                const rawDis = parseNum(aiItem.discountPercent);
-                const disPct = rawDis > 0 ? rawDis : overallDis;
-                let grossRate = parseNum(aiItem.printedRate);
-                let purRate = parseNum(aiItem.purchaseRate);
-
-                if (!grossRate && aiItem.lineTotal && qty > 0) {
-                   grossRate = parseNum(aiItem.lineTotal) / qty;
-                }
-                if (!grossRate) grossRate = purRate;
-
-                let netRate = 0;
-                if (grossRate > 0 && disPct > 0) {
-                  netRate = grossRate * (1 - disPct / 100);
-                } else if (purRate > 0) {
-                  netRate = purRate;
-                }
-
-                if (!netRate && aiItem.lineTotal) {
-                  const lineTot = parseNum(aiItem.lineTotal);
-                  netRate = (lineTot / (1 + gst / 100)) / qty;
-                }
-
-                netRate = Number(netRate.toFixed(2));
-                const finalGrossRate = grossRate > 0 ? grossRate : (disPct > 0 ? Number((netRate / (1 - disPct / 100)).toFixed(2)) : netRate);
-
-                const printedLineTotal = parseNum(aiItem.lineTotal);
-                let freeQty = parseNum(aiItem.freeQuantity) || 0;
-                if (printedLineTotal > 0 && Math.abs(qty * netRate - printedLineTotal) < 2) {
-                  freeQty = 0;
-                }
-                
-                const mrp = parseNum(aiItem.mrp) || matchedProd?.mrp || (netRate ? Number((netRate * 1.25).toFixed(2)) : '') || '';
-                const saleRate = parseNum(aiItem.saleRate) || parseNum(aiItem.unitPrice) || matchedProd?.unitPrice || (netRate ? Number((netRate * 1.15).toFixed(2)) : '') || '';
-
-                return [
-                  `"${(aiItem.itemName || '').replace(/"/g, '""')}"`,
-                  qty,
-                  freeQty || '',
-                  finalGrossRate || '',
-                  disPct || '',
-                  netRate || '',
-                  mrp,
-                  saleRate,
-                  `"${(aiItem.batchNumber || '').replace(/"/g, '""')}"`,
-                  `"${(aiItem.expiryDate || '').replace(/"/g, '""')}"`,
-                  gst,
-                  `"${(aiItem.manufacturer || matchedProd?.manufacturer || '').replace(/"/g, '""')}"`,
-                  `"${(aiItem.packSize || matchedProd?.packSize || '').replace(/"/g, '""')}"`,
-                  `"${(aiItem.hsnSacCode || matchedProd?.hsnSacCode || '').replace(/"/g, '""')}"`
-                ];
-              });
-
-              const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-              const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-              const url = URL.createObjectURL(blob);
-              const link = document.createElement('a');
-              link.setAttribute('href', url);
-              link.setAttribute('download', `invoice_${data.invoiceNumber || 'data'}.csv`);
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
-
-              toast.success('CSV generated and downloaded successfully!', { id: 'img-to-csv' });
-            } else {
-              toast.warning('No items found in the invoice.', { id: 'img-to-csv' });
-            }
-          } catch (error: any) {
-            toast.error(error.message || 'Error processing invoice', { id: 'img-to-csv' });
-          } finally {
-            setConvertingCsv(false);
-            if (imageToCsvRef.current) imageToCsvRef.current.value = '';
-          }
-        };
-        img.src = evt.target?.result as string;
-      };
-      reader.readAsDataURL(file);
-    } catch (err: any) {
-      toast.error('Failed to parse image', { id: 'img-to-csv' });
-      setConvertingCsv(false);
-    }
-  };
-
   // State for manual bill adjustment / rounding
   const [billAdjustment, setBillAdjustment] = useState<number>(0);
 
@@ -838,22 +674,20 @@ export default function CreatePurchasePage() {
               size="sm"
               className="h-8 gap-1.5 bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800 hover:bg-green-100 dark:hover:bg-green-900/50"
               onClick={() => excelInputRef.current?.click()}
-              disabled={parsingExcel || parsingAI || convertingCsv}
+              disabled={parsingExcel || parsingAI}
             >
               {parsingExcel ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
               {parsingExcel ? 'Parsing...' : 'Import Excel/CSV'}
             </Button>
 
-            <input type="file" accept="image/*" className="hidden" ref={imageToCsvRef} onChange={handleImageToCsv} />
             <Button
               variant="outline"
               size="sm"
               className="h-8 gap-1.5 bg-cyan-50 dark:bg-cyan-950/30 text-cyan-700 dark:text-cyan-400 border-cyan-200 dark:border-cyan-800 hover:bg-cyan-100 dark:hover:bg-cyan-900/50"
-              onClick={() => imageToCsvRef.current?.click()}
-              disabled={parsingAI || parsingExcel || convertingCsv}
+              onClick={() => window.open('https://canvas-to-csv.lovable.app/', '_blank')}
             >
-              {convertingCsv ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileImage className="w-4 h-4" />}
-              {convertingCsv ? 'Converting...' : 'Image to CSV'}
+              <FileImage className="w-4 h-4" />
+              Image to CSV
             </Button>
 
             <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleImageUpload} />
@@ -862,7 +696,7 @@ export default function CreatePurchasePage() {
               size="sm"
               className="h-8 gap-1.5 bg-indigo-50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/50"
               onClick={() => fileInputRef.current?.click()}
-              disabled={parsingAI || parsingExcel || convertingCsv}
+              disabled={parsingAI || parsingExcel}
             >
               {parsingAI ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
               {parsingAI ? 'Analyzing...' : 'AI Magic Scan'}
