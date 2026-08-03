@@ -907,6 +907,7 @@ function CellInput({ row, field, value, onChange, type = 'text', align, mono, bo
         className={`h-6 text-[11px] border-0 bg-transparent px-1 focus-visible:ring-1 focus-visible:ring-primary ${align === 'right' ? 'text-right' : ''} ${mono ? 'font-mono' : ''} ${bold ? 'font-bold' : ''}`}
         type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
         min={type === 'number' ? 0 : undefined} step={type === 'number' ? 'any' : undefined}
+        onFocus={e => e.target.select()}
         onKeyDown={e => {
           const target = e.currentTarget;
           if (e.key === 'Enter') {
@@ -975,4 +976,4 @@ function SummaryCell({ label, value, bold }: { label: string; value: string; bol
       <div className={`font-mono leading-tight ${bold ? 'font-bold text-primary' : ''}`}>{value}</div>
     </div>
   );
-}
+                }
