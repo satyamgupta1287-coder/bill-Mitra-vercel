@@ -26,52 +26,23 @@ async function startServer() {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const prompt = `
 You are an expert Indian B2B Pharmaceutical Invoice OCR parser.
-Extract invoice details from this pharma bill image and return a JSON object with NO markdown formatting:
-
-{
-  "supplierName": "string (e.g. SARASWATI PHARMA)",
-  "supplierGstin": "string",
-  "invoiceNumber": "string (e.g. 00659)",
-  "purchaseDate": "YYYY-MM-DD",
-  "tradeDiscountPercent": number (e.g. 6.00 if 'Dis%' or 'Less Discount' column/field is 6.00%),
-  "billAdjustment": number (Rounding or adjustment at bottom if any, e.g. 0.00),
-  "netPayableAmount": number (The final Net Payable / Grand Total at bottom right, e.g. 5781.00),
-  "items": [
-    {
-      "itemName": "string (Product Name, e.g. HAEMOKIND-GOLD)",
-      "manufacturer": "string (Mfd Name / Brand, e.g. SIRMOUR)",
-      "batchNumber": "string (Batch No, e.g. ALZAL018)",
-      "expiryDate": "string (MM/YY, e.g. 08/27)",
-      "packSize": "string (Packing, e.g. 1X300ML)",
-      "mrp": number (MRP per unit, e.g. 280.75),
-      "quantity": number (Paid quantity. If Lot is 9+1 and Qty+FR is 10, paid qty is 9, free qty is 1. If no lot split, use Qty),
-      "freeQuantity": number (Free/Bonus scheme qty, e.g. 1 if 9+1, else 0),
-      "printedRate": number (Gross rate printed in the 'Rate' column before discount, e.g. 76.80),
-      "discountPercent": number (Mandatory: Extract the exact number from the 'Dis%' column for THIS specific row. E.g. if it says 6.00, put 6.00. Do NOT put 0 unless the column literally says 0 or is blank),
-      "purchaseRate": number (CRITICAL: Net pre-tax purchase rate AFTER trade discount per unit! Formula: printedRate * (1 - discountPercent/100). E.g. 76.80 * 0.94 = 72.19),
-      "gstPercentage": number (Total GST %. If 2.5+2.5, it is 5. If 0+0, it is 0. If 6+6, it is 12),
-      "lineTotal": number (Final line total amount printed on the rightmost column, e.g. 768.00 if gross or 758.00 if net)
-    }
-  ]
-}
+Extract invoice details from this pharma bill image.
 
 CRITICAL ACCURACY INSTRUCTIONS FOR PHARMA B2B INVOICES:
 1. Extract ALL line items on the bill carefully (do not miss any row).
-2. The 'Rate' column on the bill is printedRate (gross rate, e.g. 76.80).
-3. READ DISCOUNT PER ROW: Look closely at the column specifically labeled 'Dis%' or 'Dis %'. Often this column has the same value for every single item (e.g. 6.00). If you see 6.00 in the Dis% column, you MUST output 6.00 for EVERY row that has it. Do NOT output 0 if a non-zero number is printed. This is a very common error!
-4. QUANTITY & FREE ITEMS: Look at 'Qty+FR' and the 'Amount' column. If the printed Amount equals (Qty+FR) * Rate (e.g. 10 * 67.39 = 673.90), it means the supplier billed ALL items at a reduced rate. In this case, set "quantity" to the full Qty+FR (e.g. 10) and "freeQuantity" to 0. Ignore texts like "Lot (9+1)" if the Amount is based on the full quantity.
-5. Calculate net pre-tax 'purchaseRate' = printedRate * (1 - discountPercent/100).
-6. Taxable amount for an item = quantity * purchaseRate.
-7. GST for an item = Taxable amount * (gstPercentage / 100). (e.g. 2.5+2.5 => gstPercentage = 5.0).
-8. VERIFY GRAND TOTAL:
+2. The 'Rate' column on the bill is printedRate (gross rate BEFORE discount, e.g. 76.80).
+3. READ DISCOUNT PER ROW: Look closely at the column labeled 'Dis%' or 'Dis %'. This is usually a SEPARATE column from GST% and is often the SAME value for every row on the invoice (e.g. 6.00 for every single item). If you see 6.00 in the Dis% column for one row, apply that same logic to EVERY row that shows it — do not default to 0 unless the column is genuinely blank or literally "0".
+4. Do not confuse Dis% with GST%. GST% is often shown split as "2.5+2.5" (CGST+SGST) — add both halves together for gstPercentage (e.g. 2.5+2.5 = 5, 0+0 = 0, 6+6 = 12).
+5. QUANTITY & FREE ITEMS: Look at 'Qty+FR' and the 'Amount' column. If the printed Amount equals (Qty+FR) * Rate (e.g. 10 * 67.39 = 673.90), set "quantity" to the full Qty+FR value and "freeQuantity" to 0. Ignore "Lot (9+1)" style text if Amount is based on the full quantity.
+6. Calculate net pre-tax 'purchaseRate' = printedRate * (1 - discountPercent/100).
+7. VERIFY GRAND TOTAL:
    - Gross Subtotal = sum(quantity * printedRate)
    - Total Discount = sum(quantity * printedRate * discountPercent / 100)
    - Total Taxable = Gross Subtotal - Total Discount
    - Total GST = sum(Taxable_i * gstPercentage_i / 100)
    - Calculated Net Total = Total Taxable + Total GST
-   - Compare with 'Net Payable' on the bill (e.g. 5781.00).
-   - Set 'billAdjustment' = Number((netPayableAmount - Calculated Net Total).toFixed(2)).
-9. Return ONLY valid raw JSON with no backticks or markdown wrapper.
+   - Compare with 'Net Payable' printed on the bill.
+   - Set 'billAdjustment' = Number((netPayableAmount - Calculated Net Total).toFixed(2)) to absorb any rounding difference so the bill matches exactly.
 `;
 
       const response = await ai.models.generateContent({
@@ -84,24 +55,67 @@ CRITICAL ACCURACY INSTRUCTIONS FOR PHARMA B2B INVOICES:
               { inlineData: { mimeType: 'image/jpeg', data: imageBase64 } }
             ]
           }
-        ]
+        ],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: 'object',
+            properties: {
+              supplierName: { type: 'string' },
+              supplierGstin: { type: 'string' },
+              invoiceNumber: { type: 'string' },
+              purchaseDate: { type: 'string' },
+              tradeDiscountPercent: { type: 'number' },
+              billAdjustment: { type: 'number' },
+              netPayableAmount: { type: 'number' },
+              items: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    itemName: { type: 'string' },
+                    manufacturer: { type: 'string' },
+                    batchNumber: { type: 'string' },
+                    expiryDate: { type: 'string' },
+                    packSize: { type: 'string' },
+                    mrp: { type: 'number' },
+                    quantity: { type: 'number' },
+                    freeQuantity: { type: 'number' },
+                    printedRate: { type: 'number' },
+                    discountPercent: { type: 'number' },
+                    purchaseRate: { type: 'number' },
+                    gstPercentage: { type: 'number' },
+                    lineTotal: { type: 'number' }
+                  },
+                  required: [
+                    'itemName', 'batchNumber', 'expiryDate', 'quantity',
+                    'freeQuantity', 'printedRate', 'discountPercent',
+                    'purchaseRate', 'gstPercentage', 'lineTotal'
+                  ]
+                }
+              }
+            },
+            required: ['items', 'netPayableAmount']
+          }
+        }
       });
 
       let text = response.text;
       if (!text) {
-         return res.status(500).json({ error: 'Failed to extract data from image' });
+        return res.status(500).json({ error: 'Failed to extract data from image' });
       }
 
       text = text.trim();
-      if (text.startsWith('\`\`\`json')) {
-        text = text.substring(7, text.length - 3);
-      } else if (text.startsWith('\`\`\`')) {
-        text = text.substring(3, text.length - 3);
+      // Safety net — structured output normally returns raw JSON, but strip just in case
+      if (text.startsWith('```json')) {
+        text = text.slice(7, text.endsWith('```') ? -3 : undefined);
+      } else if (text.startsWith('```')) {
+        text = text.slice(3, text.endsWith('```') ? -3 : undefined);
       }
 
       const data = JSON.parse(text);
       res.json(data);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error parsing invoice:', error);
       let errMsg = error.message || 'Error parsing invoice';
       if (errMsg.includes('API key not valid') || errMsg.includes('API_KEY_INVALID')) {
