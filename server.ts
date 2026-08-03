@@ -33,7 +33,7 @@ Extract invoice details from this pharma bill image and return a JSON object wit
   "supplierGstin": "string",
   "invoiceNumber": "string (e.g. 00659)",
   "purchaseDate": "YYYY-MM-DD",
-  "tradeDiscountPercent": number (e.g. 6.00 if 'Dis%' or 'Less Discount' column/field is 6.00%),
+  "tradeDiscountPercent": number (e.g. 6.00 if a global 'Less Discount' or 'Dis%' is applied to all items),
   "billAdjustment": number (Rounding or adjustment at bottom if any, e.g. 0.00),
   "netPayableAmount": number (The final Net Payable / Grand Total at bottom right, e.g. 5781.00),
   "items": [
@@ -44,13 +44,13 @@ Extract invoice details from this pharma bill image and return a JSON object wit
       "expiryDate": "string (MM/YY, e.g. 08/27)",
       "packSize": "string (Packing, e.g. 1X300ML)",
       "mrp": number (MRP per unit, e.g. 280.75),
-      "quantity": number (Paid quantity. If Lot is 9+1 and Qty+FR is 10, paid qty is 9, free qty is 1. If no lot split, use Qty),
+      "quantity": number (Paid quantity. If Lot is 9+1 and Qty+FR is 10, paid qty is 9, free qty is 1),
       "freeQuantity": number (Free/Bonus scheme qty, e.g. 1 if 9+1, else 0),
       "printedRate": number (Gross rate printed in the 'Rate' column before discount, e.g. 76.80),
-      "discountPercent": number (Mandatory: Extract the exact number from the 'Dis%' column for THIS specific row. E.g. if it says 6.00, put 6.00. Do NOT put 0 unless the column literally says 0 or is blank),
-      "purchaseRate": number (CRITICAL: Net pre-tax purchase rate AFTER trade discount per unit! Formula: printedRate * (1 - discountPercent/100). E.g. 76.80 * 0.94 = 72.19),
+      "discountPercent": number (MANDATORY: Look for the 'Dis%' or 'Discount %' column. If the printed invoice shows '6.00', you MUST output 6.00. NEVER output 0 if a non-zero discount is printed on the row),
+      "purchaseRate": number (CRITICAL: Net pre-tax purchase rate AFTER trade discount per unit! Formula: printedRate * (1 - discountPercent/100). E.g. 76.80 * (1 - 0.06) = 72.19),
       "gstPercentage": number (Total GST %. If 2.5+2.5, it is 5. If 0+0, it is 0. If 6+6, it is 12),
-      "lineTotal": number (Final line total amount printed on the rightmost column, e.g. 768.00 if gross or 758.00 if net)
+      "lineTotal": number (Final line total amount printed on the rightmost column, e.g. 768.00 if gross or 721.90 if net)
     }
   ]
 }
@@ -63,15 +63,7 @@ CRITICAL ACCURACY INSTRUCTIONS FOR PHARMA B2B INVOICES:
 5. Calculate net pre-tax 'purchaseRate' = printedRate * (1 - discountPercent/100).
 6. Taxable amount for an item = quantity * purchaseRate.
 7. GST for an item = Taxable amount * (gstPercentage / 100). (e.g. 2.5+2.5 => gstPercentage = 5.0).
-8. VERIFY GRAND TOTAL:
-   - Gross Subtotal = sum(quantity * printedRate)
-   - Total Discount = sum(quantity * printedRate * discountPercent / 100)
-   - Total Taxable = Gross Subtotal - Total Discount
-   - Total GST = sum(Taxable_i * gstPercentage_i / 100)
-   - Calculated Net Total = Total Taxable + Total GST
-   - Compare with 'Net Payable' on the bill (e.g. 5781.00).
-   - Set 'billAdjustment' = Number((netPayableAmount - Calculated Net Total).toFixed(2)).
-9. Return ONLY valid raw JSON with no backticks or markdown wrapper.
+8. Return ONLY valid raw JSON with no backticks or markdown wrapper.
 `;
 
       const response = await ai.models.generateContent({

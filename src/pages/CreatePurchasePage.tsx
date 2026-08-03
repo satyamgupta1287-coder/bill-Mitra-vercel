@@ -453,7 +453,7 @@ export default function CreatePurchasePage() {
               }
 
               const qty = parseNum(aiItem.quantity) || 1;
-              const gst = aiItem.gstPercentage !== undefined ? parseNum(aiItem.gstPercentage) : (matchedProd?.gstPercentage ?? 12);
+              const gst = aiItem.gstPercentage !== undefined && String(aiItem.gstPercentage).trim() !== '' ? parseNum(aiItem.gstPercentage) : (matchedProd?.gstPercentage !== undefined ? matchedProd.gstPercentage : '');
               // Agar AI ne per-row discount 0 bhej diya (jabki invoice-level discount hai),
               // to invoice-level tradeDiscountPercent ko fallback banao — 0 ko "AI ne bola 0%"
               // mat maano jab tak invoice-level discount bhi 0 na ho.
@@ -612,7 +612,7 @@ export default function CreatePurchasePage() {
                 }
 
                 const qty = parseNum(aiItem.quantity) || 1;
-                const gst = aiItem.gstPercentage !== undefined ? parseNum(aiItem.gstPercentage) : (matchedProd?.gstPercentage ?? 12);
+                const gst = aiItem.gstPercentage !== undefined && String(aiItem.gstPercentage).trim() !== '' ? parseNum(aiItem.gstPercentage) : (matchedProd?.gstPercentage !== undefined ? matchedProd.gstPercentage : '');
                 
                 const rawDis = parseNum(aiItem.discountPercent);
                 const disPct = rawDis > 0 ? rawDis : overallDis;
@@ -832,7 +832,7 @@ export default function CreatePurchasePage() {
             </>)}
           </div>
           <div className="flex items-center justify-end gap-2">
-            <input type="file" accept=".csv, text/csv, .xlsx, .xls, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" className="hidden" ref={excelInputRef} onChange={handleExcelUpload} />
+            <input type="file" className="hidden" ref={excelInputRef} onChange={handleExcelUpload} />
             <Button
               variant="outline"
               size="sm"
