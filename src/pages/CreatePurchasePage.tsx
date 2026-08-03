@@ -354,7 +354,13 @@ export default function CreatePurchasePage() {
 
               const qty = parseNum(aiItem.quantity) || 1;
               const gst = aiItem.gstPercentage !== undefined ? parseNum(aiItem.gstPercentage) : (matchedProd?.gstPercentage ?? 12);
-              const disPct = aiItem.discountPercent !== undefined ? parseNum(aiItem.discountPercent) : overallDis;
+
+              // FIX 1: Agar AI ne per-row discount 0 bhej diya (jabki invoice-level discount hai),
+              // to invoice-level tradeDiscountPercent ko fallback banao — 0 ko "AI ne bola 0%" mat maano
+              // jab tak invoice-level discount bhi 0 na ho.
+              const rawDis = parseNum(aiItem.discountPercent);
+              const disPct = rawDis > 0 ? rawDis : overallDis;
+
               let grossRate = parseNum(aiItem.printedRate);
               let purRate = parseNum(aiItem.purchaseRate);
 
@@ -380,12 +386,22 @@ export default function CreatePurchasePage() {
               netRate = Number(netRate.toFixed(2));
               const finalGrossRate = grossRate > 0 ? grossRate : (disPct > 0 ? Number((netRate / (1 - disPct / 100)).toFixed(2)) : netRate);
 
+              // FIX 2: freeQuantity ko AI pe bharosa karke seedha lene ke bajaye,
+              // printed lineTotal se verify karo. Agar sirf 'qty * netRate' hi lineTotal se
+              // match kar raha hai, to iska matlab free already qty me absorb ho chuka hai —
+              // free ko 0 rakho taaki stock me phantom extra unit add na ho.
+              const printedLineTotal = parseNum(aiItem.lineTotal);
+              let freeQty = parseNum(aiItem.freeQuantity) || 0;
+              if (printedLineTotal > 0 && Math.abs(qty * netRate - printedLineTotal) < 2) {
+                freeQty = 0;
+              }
+
               return {
                 itemName: aiItem.itemName || '',
                 productId: matchedProd?.id,
                 hsnSacCode: aiItem.hsnSacCode || matchedProd?.hsnSacCode || '',
                 quantity: qty,
-                freeQuantity: parseNum(aiItem.freeQuantity) || 0,
+                freeQuantity: freeQty,
                 printedRate: finalGrossRate,
                 discountPercent: disPct,
                 purchaseRate: netRate,
@@ -976,4 +992,4 @@ function SummaryCell({ label, value, bold }: { label: string; value: string; bol
       <div className={`font-mono leading-tight ${bold ? 'font-bold text-primary' : ''}`}>{value}</div>
     </div>
   );
-                }
+              }
