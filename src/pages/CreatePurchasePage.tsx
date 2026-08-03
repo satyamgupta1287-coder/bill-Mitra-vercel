@@ -296,33 +296,38 @@ export default function CreatePurchasePage() {
           const qty = parseNum(getField(row, 'qty', 'quantity', 'billedqty', 'billedquantity'));
           if (qty <= 0) continue; // Must have some quantity
 
-          const freeQty = parseNum(getField(row, 'free', 'freeqty', 'bonus', 'scheme'));
+          const rawFree = getField(row, 'free', 'freeqty', 'bonus', 'scheme');
+          const freeQty = rawFree !== '' ? parseNum(rawFree) : '';
           const batchNumber = getField(row, 'batch', 'batchno', 'batchnumber', 'lot');
           const expiryDate = getField(row, 'exp', 'expiry', 'expirydate', 'expdate');
-          const mrp = parseNum(getField(row, 'mrp', 'maxretailprice'));
-          const gstPercentage = parseNum(getField(row, 'gst', 'gstpercentage', 'tax', 'taxpercentage', 'taxpercent', 'igst'));
-          const discountPercent = parseNum(getField(row, 'disc', 'discount', 'dis', 'discountpercent'));
-          const purchaseRate = parseNum(getField(row, 'rate', 'purrate', 'purchaserate', 'unitprice', 'price'));
-          const saleRate = parseNum(getField(row, 'salerate', 'sellingrate'));
+          const rawMrp = getField(row, 'mrp', 'maxretailprice');
+          const mrp = rawMrp !== '' ? parseNum(rawMrp) : '';
+          const rawGst = getField(row, 'gst', 'gstpercentage', 'tax', 'taxpercentage', 'taxpercent', 'igst');
+          const rawDisc = getField(row, 'disc', 'discount', 'dis', 'discountpercent');
+          const discountPercent = rawDisc !== '' ? parseNum(rawDisc) : '';
+          const rawRate = getField(row, 'rate', 'purrate', 'purchaserate', 'unitprice', 'price');
+          const purchaseRate = rawRate !== '' ? parseNum(rawRate) : '';
+          const rawSaleRate = getField(row, 'salerate', 'sellingrate');
+          const saleRate = rawSaleRate !== '' ? parseNum(rawSaleRate) : '';
           
           let matchedProd = allProducts.find(p => p.productName.toLowerCase() === itemName.toLowerCase());
           if (!matchedProd) {
              matchedProd = allProducts.find(p => p.productName.toLowerCase().includes(itemName.toLowerCase()));
           }
 
-          const gst = gstPercentage || matchedProd?.gstPercentage || 12;
+          const gst = rawGst !== '' ? parseNum(rawGst) : (matchedProd?.gstPercentage !== undefined ? matchedProd.gstPercentage : '');
 
           newItems.push({
             itemName,
             productId: matchedProd?.id,
             hsnSacCode: getField(row, 'hsn', 'hsncode', 'hsnsaccode') || matchedProd?.hsnSacCode || '',
             quantity: qty,
-            freeQuantity: freeQty || '',
-            printedRate: purchaseRate || '',
-            discountPercent: discountPercent || '',
-            purchaseRate: purchaseRate ? Number((purchaseRate * (1 - discountPercent / 100)).toFixed(2)) : '',
-            saleRate: saleRate || matchedProd?.unitPrice || (purchaseRate ? Number((purchaseRate * 1.15).toFixed(2)) : '') || '',
-            mrp: mrp || matchedProd?.mrp || (purchaseRate ? Number((purchaseRate * 1.25).toFixed(2)) : '') || '',
+            freeQuantity: freeQty,
+            printedRate: purchaseRate,
+            discountPercent: discountPercent,
+            purchaseRate: purchaseRate !== '' ? Number((Number(purchaseRate) * (1 - Number(discountPercent || 0) / 100)).toFixed(2)) : '',
+            saleRate: saleRate !== '' ? saleRate : (matchedProd?.unitPrice || (purchaseRate !== '' ? Number((Number(purchaseRate) * 1.15).toFixed(2)) : '') || ''),
+            mrp: mrp !== '' ? mrp : (matchedProd?.mrp || (purchaseRate !== '' ? Number((Number(purchaseRate) * 1.25).toFixed(2)) : '') || ''),
             gstPercentage: gst,
             batchNumber: batchNumber || '',
             expiryDate: expiryDate || '',
@@ -598,22 +603,68 @@ export default function CreatePurchasePage() {
             
             if (data.items && Array.isArray(data.items) && data.items.length > 0) {
               const headers = ['Item Name', 'Quantity', 'Free', 'Printed Rate', 'Discount %', 'Purchase Rate', 'MRP', 'Sale Rate', 'Batch', 'Expiry', 'GST %', 'Manufacturer', 'Pack', 'HSN'];
-              const rows = data.items.map((i: any) => [
-                `"${(i.itemName || '').replace(/"/g, '""')}"`,
-                i.quantity || '',
-                i.freeQuantity || '',
-                i.printedRate || '',
-                i.discountPercent || '',
-                i.purchaseRate || '',
-                i.mrp || '',
-                i.saleRate || '',
-                `"${(i.batchNumber || '').replace(/"/g, '""')}"`,
-                `"${(i.expiryDate || '').replace(/"/g, '""')}"`,
-                i.gstPercentage || '',
-                `"${(i.manufacturer || '').replace(/"/g, '""')}"`,
-                `"${(i.packSize || '').replace(/"/g, '""')}"`,
-                `"${(i.hsnSacCode || '').replace(/"/g, '""')}"`
-              ]);
+              const overallDis = parseNum(data.tradeDiscountPercent) || parseNum(data.discountPercent);
+
+              const rows = data.items.map((aiItem: any) => {
+                let matchedProd = allProducts.find(p => p.productName.toLowerCase() === aiItem.itemName?.toLowerCase());
+                if (!matchedProd) {
+                   matchedProd = allProducts.find(p => aiItem.itemName && p.productName.toLowerCase().includes(aiItem.itemName.toLowerCase()));
+                }
+
+                const qty = parseNum(aiItem.quantity) || 1;
+                const gst = aiItem.gstPercentage !== undefined ? parseNum(aiItem.gstPercentage) : (matchedProd?.gstPercentage ?? 12);
+                
+                const rawDis = parseNum(aiItem.discountPercent);
+                const disPct = rawDis > 0 ? rawDis : overallDis;
+                let grossRate = parseNum(aiItem.printedRate);
+                let purRate = parseNum(aiItem.purchaseRate);
+
+                if (!grossRate && aiItem.lineTotal && qty > 0) {
+                   grossRate = parseNum(aiItem.lineTotal) / qty;
+                }
+                if (!grossRate) grossRate = purRate;
+
+                let netRate = 0;
+                if (grossRate > 0 && disPct > 0) {
+                  netRate = grossRate * (1 - disPct / 100);
+                } else if (purRate > 0) {
+                  netRate = purRate;
+                }
+
+                if (!netRate && aiItem.lineTotal) {
+                  const lineTot = parseNum(aiItem.lineTotal);
+                  netRate = (lineTot / (1 + gst / 100)) / qty;
+                }
+
+                netRate = Number(netRate.toFixed(2));
+                const finalGrossRate = grossRate > 0 ? grossRate : (disPct > 0 ? Number((netRate / (1 - disPct / 100)).toFixed(2)) : netRate);
+
+                const printedLineTotal = parseNum(aiItem.lineTotal);
+                let freeQty = parseNum(aiItem.freeQuantity) || 0;
+                if (printedLineTotal > 0 && Math.abs(qty * netRate - printedLineTotal) < 2) {
+                  freeQty = 0;
+                }
+                
+                const mrp = parseNum(aiItem.mrp) || matchedProd?.mrp || (netRate ? Number((netRate * 1.25).toFixed(2)) : '') || '';
+                const saleRate = parseNum(aiItem.saleRate) || parseNum(aiItem.unitPrice) || matchedProd?.unitPrice || (netRate ? Number((netRate * 1.15).toFixed(2)) : '') || '';
+
+                return [
+                  `"${(aiItem.itemName || '').replace(/"/g, '""')}"`,
+                  qty,
+                  freeQty || '',
+                  finalGrossRate || '',
+                  disPct || '',
+                  netRate || '',
+                  mrp,
+                  saleRate,
+                  `"${(aiItem.batchNumber || '').replace(/"/g, '""')}"`,
+                  `"${(aiItem.expiryDate || '').replace(/"/g, '""')}"`,
+                  gst,
+                  `"${(aiItem.manufacturer || matchedProd?.manufacturer || '').replace(/"/g, '""')}"`,
+                  `"${(aiItem.packSize || matchedProd?.packSize || '').replace(/"/g, '""')}"`,
+                  `"${(aiItem.hsnSacCode || matchedProd?.hsnSacCode || '').replace(/"/g, '""')}"`
+                ];
+              });
 
               const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
               const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -781,7 +832,7 @@ export default function CreatePurchasePage() {
             </>)}
           </div>
           <div className="flex items-center justify-end gap-2">
-            <input type="file" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" className="hidden" ref={excelInputRef} onChange={handleExcelUpload} />
+            <input type="file" accept=".csv, text/csv, .xlsx, .xls, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" className="hidden" ref={excelInputRef} onChange={handleExcelUpload} />
             <Button
               variant="outline"
               size="sm"
