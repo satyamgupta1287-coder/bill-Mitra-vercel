@@ -58,7 +58,7 @@ Extract invoice details from this pharma bill image and return a JSON object wit
 CRITICAL ACCURACY INSTRUCTIONS FOR PHARMA B2B INVOICES:
 1. Extract ALL line items on the bill carefully (do not miss any row).
 2. The 'Rate' column on the bill is printedRate (gross rate, e.g. 76.80).
-3. READ DISCOUNT PER ROW: Look closely at the column labeled 'Dis%' or 'Disc%'. For EVERY row, extract the exact number (e.g. 6.00). Do NOT output 0 if a non-zero number is printed.
+3. READ DISCOUNT PER ROW: Look closely at the column specifically labeled 'Dis%' or 'Dis %'. Often this column has the same value for every single item (e.g. 6.00). If you see 6.00 in the Dis% column, you MUST output 6.00 for EVERY row that has it. Do NOT output 0 if a non-zero number is printed. This is a very common error!
 4. QUANTITY & FREE ITEMS: Look at 'Qty+FR' and the 'Amount' column. If the printed Amount equals (Qty+FR) * Rate (e.g. 10 * 67.39 = 673.90), it means the supplier billed ALL items at a reduced rate. In this case, set "quantity" to the full Qty+FR (e.g. 10) and "freeQuantity" to 0. Ignore texts like "Lot (9+1)" if the Amount is based on the full quantity.
 5. Calculate net pre-tax 'purchaseRate' = printedRate * (1 - discountPercent/100).
 6. Taxable amount for an item = quantity * purchaseRate.

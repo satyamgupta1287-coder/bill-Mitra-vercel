@@ -11,14 +11,14 @@ type LineItem = {
   itemName: string;
   productId?: string;
   hsnSacCode: string;
-  quantity: number;
-  freeQuantity: number;
-  printedRate: number;
-  discountPercent: number;
-  purchaseRate: number;
-  saleRate: number;
-  mrp: number;
-  gstPercentage: number;
+  quantity: number | '';
+  freeQuantity: number | '';
+  printedRate: number | '';
+  discountPercent: number | '';
+  purchaseRate: number | '';
+  saleRate: number | '';
+  mrp: number | '';
+  gstPercentage: number | '';
   batchNumber: string;
   expiryDate: string;
   manufacturer: string;
@@ -26,8 +26,8 @@ type LineItem = {
 };
 
 const emptyItem = (): LineItem => ({
-  itemName: '', hsnSacCode: '', quantity: 1, freeQuantity: 0,
-  printedRate: 0, discountPercent: 0, purchaseRate: 0, saleRate: 0, mrp: 0, gstPercentage: 12,
+  itemName: '', hsnSacCode: '', quantity: 1, freeQuantity: '',
+  printedRate: '', discountPercent: '', purchaseRate: '', saleRate: '', mrp: '', gstPercentage: 12,
   batchNumber: '', expiryDate: '', manufacturer: '', packSize: '',
 });
 
@@ -819,30 +819,30 @@ onKeyDown={e => {
                   <CellInput row={i} field="mfr" value={item.manufacturer} onChange={v => updateItem(i, 'manufacturer', v)} onEnter={() => goToNextRow(i)} />
                   <CellInput row={i} field="batch" value={item.batchNumber} onChange={v => updateItem(i, 'batchNumber', v)} mono onEnter={() => focusField(i, 'expiry')} />
                   <CellInput row={i} field="expiry" value={item.expiryDate} onChange={v => updateItem(i, 'expiryDate', v)} placeholder="MM/YY" onEnter={() => focusField(i, 'qty')} />
-                  <CellInput row={i} field="qty" value={item.quantity === 0 ? 0 : (item.quantity || '')} onChange={v => updateItem(i, 'quantity', Number(v))} type="number" align="right" bold onEnter={() => focusField(i, 'free')} />
-                  <CellInput row={i} field="free" value={item.freeQuantity === 0 ? 0 : (item.freeQuantity || '')} onChange={v => updateItem(i, 'freeQuantity', Number(v))} type="number" align="right" onEnter={() => focusField(i, 'rate')} />
-                  <CellInput row={i} field="rate" value={item.printedRate === 0 && item.purchaseRate === 0 ? 0 : (item.printedRate || item.purchaseRate || '')} onChange={v => {
-                    const newGross = Number(v);
-                    const dis = item.discountPercent || 0;
+                  <CellInput row={i} field="qty" value={item.quantity} onChange={v => updateItem(i, 'quantity', v === '' ? '' : Number(v))} type="number" align="right" bold onEnter={() => focusField(i, 'free')} />
+                  <CellInput row={i} field="free" value={item.freeQuantity} onChange={v => updateItem(i, 'freeQuantity', v === '' ? '' : Number(v))} type="number" align="right" onEnter={() => focusField(i, 'rate')} />
+                  <CellInput row={i} field="rate" value={item.printedRate !== '' ? item.printedRate : item.purchaseRate} onChange={v => {
+                    const newGross = v === '' ? '' : Number(v);
+                    const dis = Number(item.discountPercent) || 0;
                     updateItem(i, {
                       printedRate: newGross,
-                      purchaseRate: newGross * (1 - dis / 100)
+                      purchaseRate: newGross === '' ? '' : newGross * (1 - dis / 100)
                     });
                   }} type="number" align="right" mono onEnter={() => focusField(i, 'dis')} />
-                  <CellInput row={i} field="dis" value={item.discountPercent === 0 ? 0 : (item.discountPercent || '')} onChange={v => {
-                    const newDis = Number(v);
-                    const baseGross = item.printedRate || item.purchaseRate || 0;
+                  <CellInput row={i} field="dis" value={item.discountPercent} onChange={v => {
+                    const newDis = v === '' ? '' : Number(v);
+                    const baseGross = Number(item.printedRate) || Number(item.purchaseRate) || 0;
                     updateItem(i, {
                       discountPercent: newDis,
-                      purchaseRate: baseGross * (1 - newDis / 100)
+                      purchaseRate: baseGross * (1 - (newDis === '' ? 0 : newDis) / 100)
                     });
                   }} type="number" align="right" placeholder="0" onEnter={() => focusField(i, 'saleRate')} />
                   <td className="px-1.5 py-0.5 text-right font-mono font-bold text-[11px] text-emerald-600 dark:text-emerald-400">
                     {item.itemName ? netRate.toFixed(2) : ''}
                   </td>
-                  <CellInput row={i} field="saleRate" value={item.saleRate === 0 ? 0 : (item.saleRate || '')} onChange={v => updateItem(i, 'saleRate', Number(v))} type="number" align="right" mono onEnter={() => focusField(i, 'mrp')} />
-                  <CellInput row={i} field="mrp" value={item.mrp === 0 ? 0 : (item.mrp || '')} onChange={v => updateItem(i, 'mrp', Number(v))} type="number" align="right" mono onEnter={() => focusField(i, 'gst')} />
-                  <CellInput row={i} field="gst" value={item.gstPercentage === 0 ? 0 : (item.gstPercentage || '')} onChange={v => updateItem(i, 'gstPercentage', Number(v))} type="number" align="right" onEnter={() => goToNextRow(i)} />
+                  <CellInput row={i} field="saleRate" value={item.saleRate} onChange={v => updateItem(i, 'saleRate', v === '' ? '' : Number(v))} type="number" align="right" mono onEnter={() => focusField(i, 'mrp')} />
+                  <CellInput row={i} field="mrp" value={item.mrp} onChange={v => updateItem(i, 'mrp', v === '' ? '' : Number(v))} type="number" align="right" mono onEnter={() => focusField(i, 'gst')} />
+                  <CellInput row={i} field="gst" value={item.gstPercentage} onChange={v => updateItem(i, 'gstPercentage', v === '' ? '' : Number(v))} type="number" align="right" onEnter={() => goToNextRow(i)} />
                   <td className="px-1.5 py-0.5 text-right font-mono font-bold text-[11px]">{item.itemName ? lineAmt.toFixed(2) : ''}</td>
                   <td className="px-0.5">
                     {items.length > 1 && item.itemName && (
