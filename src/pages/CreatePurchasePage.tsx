@@ -203,10 +203,14 @@ export default function CreatePurchasePage() {
     setShowSupplierList(false);
   };
 
-  const updateItem = useCallback((i: number, field: string, value: any) => {
+  const updateItem = useCallback((i: number, field: string | Partial<LineItem>, value?: any) => {
     setItems(prev => {
       const n = [...prev];
-      (n[i] as any)[field] = value;
+      if (typeof field === 'string') {
+        n[i] = { ...n[i], [field]: value };
+      } else {
+        n[i] = { ...n[i], ...field };
+      }
       return n;
     });
   }, []);
@@ -820,14 +824,18 @@ onKeyDown={e => {
                   <CellInput row={i} field="rate" value={item.printedRate === 0 && item.purchaseRate === 0 ? 0 : (item.printedRate || item.purchaseRate || '')} onChange={v => {
                     const newGross = Number(v);
                     const dis = item.discountPercent || 0;
-                    updateItem(i, 'printedRate', newGross);
-                    updateItem(i, 'purchaseRate', newGross * (1 - dis / 100));
+                    updateItem(i, {
+                      printedRate: newGross,
+                      purchaseRate: newGross * (1 - dis / 100)
+                    });
                   }} type="number" align="right" mono onEnter={() => focusField(i, 'dis')} />
                   <CellInput row={i} field="dis" value={item.discountPercent === 0 ? 0 : (item.discountPercent || '')} onChange={v => {
                     const newDis = Number(v);
                     const baseGross = item.printedRate || item.purchaseRate || 0;
-                    updateItem(i, 'discountPercent', newDis);
-                    updateItem(i, 'purchaseRate', baseGross * (1 - newDis / 100));
+                    updateItem(i, {
+                      discountPercent: newDis,
+                      purchaseRate: baseGross * (1 - newDis / 100)
+                    });
                   }} type="number" align="right" placeholder="0" onEnter={() => focusField(i, 'saleRate')} />
                   <td className="px-1.5 py-0.5 text-right font-mono font-bold text-[11px] text-emerald-600 dark:text-emerald-400">
                     {item.itemName ? netRate.toFixed(2) : ''}

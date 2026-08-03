@@ -58,11 +58,12 @@ Extract invoice details from this pharma bill image and return a JSON object wit
 CRITICAL ACCURACY INSTRUCTIONS FOR PHARMA B2B INVOICES:
 1. Extract ALL line items on the bill carefully (do not miss any row).
 2. The 'Rate' column on the bill is printedRate (gross rate, e.g. 76.80).
-3. READ DISCOUNT PER ROW: Look at the column specifically labeled 'Dis%' or 'Disc%' on the invoice image. For EVERY row, read the exact number printed in that column and set it as 'discountPercent' (e.g. if it says 5.00, put 5.00. If it says 6.00, put 6.00. If 0, put 0). DO NOT default to 0 if a number is printed!
-4. Calculate net pre-tax 'purchaseRate' = printedRate * (1 - discountPercent/100) (e.g. 76.80 * 0.94 = 72.192).
-5. Taxable amount for an item = quantity * purchaseRate.
-6. GST for an item = Taxable amount * (gstPercentage / 100). (e.g. 2.5+2.5 => gstPercentage = 5.0).
-7. VERIFY GRAND TOTAL:
+3. READ DISCOUNT PER ROW: Look closely at the column labeled 'Dis%' or 'Disc%'. For EVERY row, extract the exact number (e.g. 6.00). Do NOT output 0 if a non-zero number is printed.
+4. QUANTITY & FREE ITEMS: Look at 'Qty+FR' and the 'Amount' column. If the printed Amount equals (Qty+FR) * Rate (e.g. 10 * 67.39 = 673.90), it means the supplier billed ALL items at a reduced rate. In this case, set "quantity" to the full Qty+FR (e.g. 10) and "freeQuantity" to 0. Ignore texts like "Lot (9+1)" if the Amount is based on the full quantity.
+5. Calculate net pre-tax 'purchaseRate' = printedRate * (1 - discountPercent/100).
+6. Taxable amount for an item = quantity * purchaseRate.
+7. GST for an item = Taxable amount * (gstPercentage / 100). (e.g. 2.5+2.5 => gstPercentage = 5.0).
+8. VERIFY GRAND TOTAL:
    - Gross Subtotal = sum(quantity * printedRate)
    - Total Discount = sum(quantity * printedRate * discountPercent / 100)
    - Total Taxable = Gross Subtotal - Total Discount
@@ -70,7 +71,7 @@ CRITICAL ACCURACY INSTRUCTIONS FOR PHARMA B2B INVOICES:
    - Calculated Net Total = Total Taxable + Total GST
    - Compare with 'Net Payable' on the bill (e.g. 5781.00).
    - Set 'billAdjustment' = Number((netPayableAmount - Calculated Net Total).toFixed(2)).
-8. Return ONLY valid raw JSON with no backticks or markdown wrapper.
+9. Return ONLY valid raw JSON with no backticks or markdown wrapper.
 `;
 
       const response = await ai.models.generateContent({
