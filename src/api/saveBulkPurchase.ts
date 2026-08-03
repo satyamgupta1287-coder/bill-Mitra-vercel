@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { createEndpoint, Purchases, Products, Suppliers } from 'zite-integrations-backend-sdk';
+import { createEndpoint, Purchases, Products, Suppliers, Manufacturers } from 'zite-integrations-backend-sdk';
 
 export default createEndpoint({
   authenticated: true,
@@ -7,6 +7,7 @@ export default createEndpoint({
     existingPurchaseNumber: z.string().optional(),
     purchaseDate: z.string(),
     supplierId: z.string().optional(),
+    supplierName: z.string().optional(),
     supplierInvoiceNumber: z.string().optional(),
     items: z.array(z.object({
       productId: z.string().optional(),
@@ -47,17 +48,52 @@ export default createEndpoint({
     }
 
     let supplierName = '';
-    if (input.supplierId) {
-      const supplier = await Suppliers.findOne({ id: input.supplierId });
+    let resolvedSupplierId = input.supplierId;
+    if (resolvedSupplierId) {
+      const supplier = await Suppliers.findOne({ id: resolvedSupplierId });
       if (supplier) supplierName = supplier.supplierName || '';
+    } else if (input.supplierName) {
+      const { records: userSuppliers } = await Suppliers.findAll({ filters: { owner: context.user.id }, limit: 500 });
+      const matched = userSuppliers.find((s: any) => s.supplierName && s.supplierName.trim().toLowerCase() === input.supplierName!.trim().toLowerCase());
+      if (matched) {
+        resolvedSupplierId = matched.id;
+        supplierName = matched.supplierName;
+      } else {
+        const newSupplier = await Suppliers.create({
+          record: {
+            supplierName: input.supplierName,
+            owner: context.user.id,
+            ...(companyId ? { company: companyId } : {})
+          }
+        });
+        resolvedSupplierId = newSupplier.id;
+        supplierName = input.supplierName;
+      }
     }
 
     const invoiceRef = [input.supplierInvoiceNumber, supplierName].filter(Boolean).join(' | ');
 
     // Handle missing product IDs by matching existing product names or creating new ones
     const { records: userProducts } = await Products.findAll({ filters: { owner: context.user.id }, limit: 500 });
+    const { records: userManufacturers } = await Manufacturers.findAll({ filters: { owner: context.user.id }, limit: 500 });
 
     for (const item of input.items) {
+      // Find or create manufacturer
+      if (item.manufacturer) {
+        const trimmedMfr = item.manufacturer.trim().toLowerCase();
+        const matchedMfr = userManufacturers.find((m: any) => m.manufacturerName && m.manufacturerName.trim().toLowerCase() === trimmedMfr);
+        if (!matchedMfr && trimmedMfr.length > 0) {
+          const newMfr = await Manufacturers.create({
+            record: {
+              manufacturerName: item.manufacturer,
+              owner: context.user.id,
+              ...(companyId ? { company: companyId } : {})
+            }
+          });
+          userManufacturers.push(newMfr);
+        }
+      }
+
       if (!item.productId) {
         const trimmedName = item.itemName.trim().toLowerCase();
         const matched = userProducts.find((p: any) => p.productName && p.productName.trim().toLowerCase() === trimmedName);
@@ -90,6 +126,7 @@ export default createEndpoint({
       const rec: any = {
         purchaseNumber: refNum,
         purchaseDate: input.purchaseDate,
+        supplier: resolvedSupplierId,
         supplierInvoiceNumber: invoiceRef || input.supplierInvoiceNumber,
         product: item.productId,
         batchNumber: item.batchNumber,
