@@ -77,6 +77,7 @@ export default function CreatePurchasePage() {
   // Search states
   const [supplierSearch, setSupplierSearch] = useState('');
   const [showSupplierList, setShowSupplierList] = useState(false);
+  const [selectedSupplierIndex, setSelectedSupplierIndex] = useState(0);
   const supplierRef = useRef<HTMLDivElement>(null);
   const [activeProductRow, setActiveProductRow] = useState<number | null>(null);
   const [productSearch, setProductSearch] = useState('');
@@ -612,7 +613,23 @@ export default function CreatePurchasePage() {
         <span className="font-bold text-sm">Purchase Bill Entry</span>
         <div className="ml-auto flex items-center gap-3">
           <Input type="date" className="h-6 text-[10px] w-28 bg-primary-foreground/10 border-primary-foreground/20 text-primary-foreground" value={purchaseDate} onChange={e => setPurchaseDate(e.target.value)} />
-          <Input className="h-6 text-[10px] w-32 bg-primary-foreground/10 border-primary-foreground/20 text-primary-foreground" placeholder="Supplier Invoice #" value={supplierInvoiceNumber} onChange={e => setSupplierInvoiceNumber(e.target.value)} />
+          <Input 
+            id="invoice-number-input"
+            className="h-6 text-[10px] w-32 bg-primary-foreground/10 border-primary-foreground/20 text-primary-foreground focus:bg-primary-foreground/20" 
+            placeholder="Supplier Invoice #" 
+            value={supplierInvoiceNumber} 
+            onChange={e => setSupplierInvoiceNumber(e.target.value)} 
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                const firstRowInput = document.querySelector(`input[data-row="0"][data-field="product"]`) as HTMLInputElement | null;
+                if (firstRowInput) {
+                  firstRowInput.focus();
+                  firstRowInput.select();
+                }
+              }
+            }}
+          />
         </div>
       </div>
 
@@ -630,8 +647,27 @@ export default function CreatePurchasePage() {
               ) : (
                 <div className="flex items-center gap-1 flex-1 relative">
                   <Search className="w-3 h-3 text-muted-foreground absolute left-2 z-10" />
-                  <Input className="h-7 text-xs pl-7 font-semibold" placeholder="Search supplier..." value={supplierSearch}
-                    onChange={e => { setSupplierSearch(e.target.value); setShowSupplierList(true); }} onFocus={() => setShowSupplierList(true)} />
+                  <Input 
+                    autoFocus
+                    className="h-7 text-xs pl-7 font-semibold" placeholder="Search supplier..." value={supplierSearch}
+                    onChange={e => { setSupplierSearch(e.target.value); setShowSupplierList(true); setSelectedSupplierIndex(0); }} 
+                    onFocus={() => setShowSupplierList(true)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (filteredSuppliers.length > 0) {
+                          selectSupplier(filteredSuppliers[selectedSupplierIndex || 0]);
+                          setTimeout(() => document.getElementById('invoice-number-input')?.focus(), 50);
+                        }
+                      } else if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        setSelectedSupplierIndex(prev => Math.min(prev + 1, filteredSuppliers.length - 1));
+                      } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        setSelectedSupplierIndex(prev => Math.max(prev - 1, 0));
+                      }
+                    }}
+                  />
                 </div>
               )}
             </div>
@@ -643,7 +679,7 @@ export default function CreatePurchasePage() {
                   </thead>
                   <tbody>
                     {filteredSuppliers.map((s, idx) => (
-                      <tr key={s.id} className={`cursor-pointer hover:bg-accent ${idx % 2 === 0 ? 'bg-accent/30' : 'bg-card'}`} onClick={() => selectSupplier(s)}>
+                      <tr key={s.id} className={`cursor-pointer hover:bg-accent ${idx === selectedSupplierIndex ? 'bg-primary/20 outline outline-1 outline-primary' : (idx % 2 === 0 ? 'bg-accent/30' : 'bg-card')}`} onClick={() => { selectSupplier(s); setTimeout(() => document.getElementById('invoice-number-input')?.focus(), 50); }}>
                         <td className="px-2 py-1 font-semibold text-foreground">{s.supplierName}</td>
                         <td className="px-2 py-1 text-muted-foreground hidden md:table-cell">{[s.city, s.state].filter(Boolean).join(', ')}</td>
                         <td className="px-2 py-1 font-mono text-muted-foreground hidden md:table-cell">{s.gstin || '-'}</td>
@@ -739,8 +775,8 @@ export default function CreatePurchasePage() {
               const lineAmt = Number(item.quantity) * netRate * (1 + (Number(item.gstPercentage) || 0) / 100);
               const isActive = activeProductRow === i;
               return (
-                <tr key={i} className={`border-b border-border/40 ${i % 2 === 0 ? 'bg-accent/15' : 'bg-card'}`}>
-                  <td className="px-1.5 py-0.5 text-muted-foreground text-[10px]">{i + 1}</td>
+                <tr key={i} className={`border-b border-border/40 transition-colors ${isActive ? 'bg-cyan-500/10 dark:bg-cyan-900/20 shadow-[inset_0_1px_3px_rgba(6,182,212,0.3)]' : (i % 2 === 0 ? 'bg-accent/15' : 'bg-card')}`}>
+                  <td className={`px-1.5 py-0.5 text-[10px] ${isActive ? 'text-cyan-600 dark:text-cyan-400 font-bold' : 'text-muted-foreground'}`}>{i + 1}</td>
                   <td className="px-0.5 py-0.5 relative">
                     <Input
                       data-row={i} data-field="product"
